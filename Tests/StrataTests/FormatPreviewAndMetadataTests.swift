@@ -687,7 +687,7 @@ struct FormatPreviewAndMetadataTests {
         #expect(fifoAppSummary.signedBy == nil)
     }
 
-    // MARK: - Limits: SafeXML, NotebookLoader, TextFile.readSuffix, Archive Formats & SplitView Divider
+    // MARK: - Limits: SafeXML, NotebookLoader, TextFile.readSuffix, Archive Formats
 
     @Test func xmlLimitsNotebookLimitsAndTextFileReadSuffixGuardsHold() async throws {
         let tree = try TestTree("suffix.bin", "empty.bin", "huge_outputs.ipynb", "many_diagrams.ipynb", "large_ods.ods")
@@ -784,24 +784,6 @@ struct FormatPreviewAndMetadataTests {
         #expect(mermaidCount == 12)
     }
 
-    @Test @MainActor func previewSplitViewControllerHidesDividerWhenBrowserIsHidden() throws {
-        let browser = NSViewController()
-        browser.view = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 400))
-        let detail = NSViewController()
-        detail.view = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 400))
-        let split = PreviewSplitViewController(browser: browser, detail: detail, preferences: try Prefs.isolated())
-        split.view.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
-        #expect(split.browserVisible)
-        #expect(!split.splitView(split.splitView, shouldHideDividerAt: 0))
-
-        split.showBrowser(false)
-        #expect(!split.browserVisible)
-        #expect(split.splitView(split.splitView, shouldHideDividerAt: 0))
-        let rect = split.splitView(split.splitView, effectiveRect: NSRect(x: 200, y: 0, width: 1, height: 400),
-                                   forDrawnRect: NSRect(x: 200, y: 0, width: 1, height: 400), ofDividerAt: 0)
-        #expect(rect == .zero)
-    }
-
     // MARK: - Inspector Rows & Search Metadata
 
     @Test @MainActor func mediaDetailRowsFormatNewHighSignalFieldsCleanly() {
@@ -841,7 +823,7 @@ struct FormatPreviewAndMetadataTests {
         #expect(!Summarizer.canSummarize(tree.url("study.ipynb")))
 
         // With metadata = true, TextExtractor extracts concise human-searchable metadata for structured formats,
-        // while images remain gated on options.ocr so photo folders do not crowd out documents in SemanticIndex.
+        // while images remain gated on options.ocr so ordinary text extraction skips photo OCR.
         var options = TextExtractor.Options()
         #expect(!TextExtractor.canExtract(tree.url("photo.jpg"), options: options))
         options.metadata = true

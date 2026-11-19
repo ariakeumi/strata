@@ -16,10 +16,9 @@ extension SavedDestination {
         case .folder(let url): return location(url, kind: "folder")
         case .search(let text, let scope):
             guard !text.isEmpty, text.utf8.count <= 8192 else { return nil }
-            if let scope { return location(scope, kind: "search", query: text) }
-            return SavedDestination(kind: "search", query: text)
+            return location(scope, kind: "search", query: text)
         case .recents: return SavedDestination(kind: "recents")
-        case .duplicates: return SavedDestination(kind: "duplicates")
+        case .smb: return nil
         }
     }
 
@@ -40,11 +39,9 @@ extension SavedDestination {
         case "folder": return location().map(Destination.folder)
         case "search":
             guard let query, !query.isEmpty, query.utf8.count <= 8192 else { return nil }
-            if path == nil && server == nil { return .search(query, scope: nil) }
             guard let scope = location() else { return nil }
             return .search(query, scope: scope)
         case "recents" where path == nil && server == nil && query == nil: return .recents
-        case "duplicates" where path == nil && server == nil && query == nil: return .duplicates
         default: return nil
         }
     }

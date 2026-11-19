@@ -40,7 +40,7 @@ private final class ResourceTestMarker: NSObject {}
         #expect(tree.text("Products/Example.bundle/sample.txt") == "Products/Example.bundle/sample.txt")
     }
 
-    @Test(arguments: ["present", "missing-previews", "missing-themes", "missing-script"])
+    @Test(arguments: ["present", "missing-previews", "missing-script"])
     func thePackagedProbeLoadsTheReportedDiagramAndMissingAssetsExitNormally(_ condition: String) async throws {
         let tree = try TestTree("Host.app/Contents/Resources/")
         let products = Bundle(for: ResourceTestMarker.self).bundleURL.deletingLastPathComponent()
@@ -54,10 +54,9 @@ private final class ResourceTestMarker: NSObject {}
 
     @concurrent private static func probe(_ root: URL, products: URL, condition: String) async throws -> ProcessRunner.Result {
         let resources = root.appending(path: "Host.app/Contents/Resources")
-        for name in ["Strata_StrataPreviews", "Strata_StrataTheme"] {
+        if condition != "missing-previews" {
+            let name = "Strata_StrataPreviews"
             let bundle = try ResourceBundle.named(name, in: .main, linkedTo: Bundle(for: ResourceTestMarker.self))
-            if condition == "missing-previews" && name == "Strata_StrataPreviews" { continue }
-            if condition == "missing-themes" && name == "Strata_StrataTheme" { continue }
             try FileManager.default.copyItem(at: bundle.bundleURL, to: resources.appending(path: name + ".bundle"))
         }
         if condition == "missing-script" {

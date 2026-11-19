@@ -2,27 +2,21 @@ import AppKit
 
 /// Shown under the toolbar while searching: where to search, how many matches, and saving the search.
 final class SearchScopeBar: NSSplitViewItemAccessoryViewController {
-    var onScopeChange: ((_ everywhere: Bool) -> Void)?
     var onSave: (() -> Void)?
     /// Match Case was switched (the search's `case:`).
     var onMatchCase: ((Bool) -> Void)?
     var onFilters: ((NSView) -> Void)?
 
-    private let scope = NSSegmentedControl()
+    private let scope = NSTextField(labelWithString: "")
     private let matchCase = NSButton(checkboxWithTitle: String(localized: "Match Case"), target: nil, action: nil)
     private let summary = NSTextField(labelWithString: "")
     private let save = NSButton()
     private let filters = NSButton()
 
     override func loadView() {
-        scope.segmentStyle = .automatic
-        scope.trackingMode = .selectOne
-        scope.segmentCount = 2
-        scope.setLabel(String(localized: "Everywhere", comment: "Search scope: the whole index"), forSegment: 0)
-        scope.selectedSegment = 0
-        scope.controlSize = .small
-        scope.target = self
-        scope.action = #selector(scopeChanged)
+        scope.font = .systemFont(ofSize: 11, weight: .medium)
+        scope.lineBreakMode = .byTruncatingTail
+        scope.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         matchCase.controlSize = .small
         matchCase.font = .systemFont(ofSize: 11)
@@ -63,16 +57,10 @@ final class SearchScopeBar: NSSplitViewItemAccessoryViewController {
     }
 
     /// `caseApplies`: off for searches Spotlight or a plain-English reading answers (case means nothing there).
-    func configure(folderName: String?, everywhere: Bool, matchCase: Bool, caseApplies: Bool) {
+    func configure(folderName: String, matchCase: Bool, caseApplies: Bool) {
         loadViewIfNeeded()
         setMatchCase(matchCase, applies: caseApplies)
-        if let folderName {
-            scope.segmentCount = 2
-            scope.setLabel(String(localized: "“\(folderName)”", comment: "Search scope: the current folder, by name in quotes"), forSegment: 1)
-        } else {
-            scope.segmentCount = 1
-        }
-        scope.selectedSegment = everywhere || folderName == nil ? 0 : 1
+        scope.stringValue = folderName
     }
 
     func setMatchCase(_ on: Bool, applies: Bool) {
@@ -84,10 +72,6 @@ final class SearchScopeBar: NSSplitViewItemAccessoryViewController {
     func setSummary(_ text: String) {
         loadViewIfNeeded()
         summary.stringValue = text
-    }
-
-    @objc private func scopeChanged() {
-        onScopeChange?(scope.selectedSegment == 0)
     }
 
     @objc private func matchCaseChanged() {

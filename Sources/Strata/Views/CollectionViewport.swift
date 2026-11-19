@@ -1,14 +1,32 @@
 import AppKit
 
+struct CollectionPosition {
+    let selection: [URL]
+    let lead: URL?
+    let viewport: CollectionViewport?
+
+    init(_ collection: NSCollectionView, entries: [FileEntry], lead: Int?) {
+        selection = collection.selectionIndexPaths.compactMap { path in
+            entries.indices.contains(path.item) ? entries[path.item].url : nil
+        }
+        self.lead = lead.flatMap { entries.indices.contains($0) ? entries[$0].url : nil }
+        viewport = CollectionViewport.capture(collection, entries: entries)
+    }
+}
+
 struct CollectionViewport {
     private let key: String
     private let offset: NSPoint
 
     static func capture(_ collection: NSCollectionView, entries: [FileEntry]) -> Self? {
-        let first = collection.indexPathsForVisibleItems().filter { entries.indices.contains($0.item) }.min { $0.item < $1.item }
-        guard let first, let frame = collection.layoutAttributesForItem(at: first)?.frame else { return nil }
-        return Self(key: entries[first.item].locationKey,
-            offset: NSPoint(x: collection.visibleRect.minX - frame.minX, y: collection.visibleRect.minY - frame.minY))
+        guard !entries.isEmpty, let visible = collection.enclosingScrollView?.documentVisibleRect,
+              let attributes = collection.collectionViewLayout?.layoutAttributesForElements(in: visible) else { return nil }
+        let first = attributes.filter {
+            $0.representedElementCategory == .item && $0.frame.intersects(visible)
+        }.min { ($0.indexPath?.item ?? .max) < ($1.indexPath?.item ?? .max) }
+        guard let first, let index = first.indexPath?.item, entries.indices.contains(index) else { return nil }
+        return Self(key: entries[index].url.fileViewKey,
+                    offset: NSPoint(x: visible.minX - first.frame.minX, y: visible.minY - first.frame.minY))
     }
 
     func restore(in collection: NSCollectionView, index: (String) -> Int?) {

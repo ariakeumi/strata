@@ -4,20 +4,12 @@ import SwiftUI
 
 /// ⌘, — the standard toolbar-tabbed settings window, each pane a SwiftUI form.
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
-    static let shared = SettingsWindowController(preferences: .shared, userThemes: .shared)
+    static let shared = SettingsWindowController(preferences: .shared,
+                                                 smb: BrowserServices.shared.smb, places: BrowserServices.shared.places)
     private let room: SettingsRoom
     let settingsFocus: SettingsFocus
-    let themeChoices: ThemeChoices
-    private let preferences: Prefs
-    private let userThemes: UserThemes
 
-    /// `preferences` and `userThemes`: whose color themes Appearance offers, and whose themes folder is read again
-    /// as Settings comes forward.
-    init(preferences: Prefs, userThemes: UserThemes) {
-        self.preferences = preferences
-        self.userThemes = userThemes
-        let themeChoices = ThemeChoices(preferences: preferences, userThemes: userThemes)
-        self.themeChoices = themeChoices
+    init(preferences: Prefs, smb: SMBConnections? = nil, places: PlaceChecks? = nil) {
         let tabs = NSTabViewController()
         tabs.tabStyle = .toolbar
         let room = SettingsRoom()
@@ -38,10 +30,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             return item
         }
         tabs.addTabViewItem(pane(.general, "gearshape", GeneralSettings()))
-        tabs.addTabViewItem(pane(.search, "magnifyingglass", IndexSettings()))
+        tabs.addTabViewItem(pane(.search, "magnifyingglass", SearchSettings()))
         tabs.addTabViewItem(pane(.terminal, "terminal", TerminalSettings()))
-        tabs.addTabViewItem(pane(.appearance, "paintbrush", AppearanceSettings(themes: themeChoices)))
+        tabs.addTabViewItem(pane(.appearance, "paintbrush", AppearanceSettings(preferences: preferences)))
         tabs.addTabViewItem(pane(.shortcuts, "keyboard", ShortcutSettings()))
+        tabs.addTabViewItem(pane(.connections, "network", SMBSettingsPane(connections: smb, places: places)))
         let window = NSWindow(contentViewController: tabs)
         window.styleMask = [.titled, .closable]
         // Settings joins Strata’s full-screen Space instead of taking focus back to its old desktop.
@@ -74,12 +67,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) { settingsFocus.clear() }
-
-    /// A theme file added or changed since the folder was last read shows up as Settings comes forward, from the
-    /// editor it was written in too: trying one needs no relaunch.
-    func windowDidBecomeKey(_ notification: Notification) {
-        Task { [preferences, userThemes] in await preferences.readThemes(of: userThemes) }
-    }
 
     func windowDidChangeScreen(_ notification: Notification) {
         fitToScreen()
@@ -166,7 +153,6 @@ private struct GeneralSettings: View {
             Section("New Files") {
                 NewFileExtensionField().settingAnchor(.newFileExtension)
             }
-            UpdatesSection().settingAnchor(.updates)
             Section("Copying") {
                 PrefToggle(title: "Verify copies",
                            caption: "Reads every copied file back and compares it with the original. Slower, but catches failing disks and cables.",
@@ -227,30 +213,11 @@ private struct NewFileExtensionField: View {
     }
 }
 
-private struct IndexSettings: View {
-    @State private var status = ""
+private struct SearchSettings: View {
     @State private var hasAccess = Privacy.hasFullDiskAccess
-    @State private var indexes = FileIndex.shared.isOn
 
     var body: some View {
         Form {
-            Section {
-                Toggle(isOn: Binding(get: { indexes }, set: { FileIndex.shared.turn(on: $0); refresh() })) {
-                    Text("Index files")
-                    Text("Search across your Mac, Recents, Duplicates and instant folder sizes use the index. Turned off, it stops, frees its memory and is deleted from disk: folder sizes are measured when you ask, and search reads the folder you’re in.")
-                }
-                .settingAnchor(.indexFiles)
-                LabeledContent("Status", value: status)
-                LabeledContent(String(localized: "Covers", comment: "Settings ▸ Search & Index: which folders the index includes"),
-                               value: String(localized: "Your home folder and Applications"))
-                LabeledContent("Rebuild") {
-                    Button("Rebuild Index") { FileIndex.shared.rebuild() }.settingAnchor(.rebuildIndex)
-                }
-                .disabled(!indexes)
-            } header: {
-                Text("Index", comment: "Settings ▸ Search & Index: section about the file index")
-            }
-            IndexExclusionSettings(index: .shared).disabled(!indexes)
             Section {
                 LabeledContent("Full Disk Access") {
                     if hasAccess {
@@ -261,13 +228,8 @@ private struct IndexSettings: View {
                     }
                 }
                 .settingAnchor(.fullDiskAccess)
-                if !hasAccess {
-                    Text("Without it, Desktop, Documents and Downloads are indexed only after you open them in Strata, and other apps’ data is skipped.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
             } header: {
-                Text("Access", comment: "Settings ▸ Search & Index: section about Full Disk Access")
+                Text("Access", comment: "Settings ▸ Search: section about Full Disk Access")
             }
             Section {
                 syntax("invoice 2026", "names containing all words")
@@ -301,18 +263,6 @@ private struct IndexSettings: View {
     private func refresh() {
         Privacy.refresh()
         hasAccess = Privacy.hasFullDiskAccess
-        indexes = FileIndex.shared.isOn
-        guard indexes else {
-            status = String(localized: "Off", comment: "Settings ▸ Search & Index: the index is turned off")
-            return
-        }
-        switch FileIndex.shared.phase {
-        case .loading: status = String(localized: "Loading…")
-        case .updating: status = String(localized: "Updating index…")
-        case .unavailable: status = String(localized: "Index updates unavailable")
-        case .scanning(let items): status = String(localized: "Indexing… \(items) items so far", comment: "plural")
-        case .ready: status = String(localized: "\(FileIndex.shared.itemCount) items · up to date", comment: "plural")
-        }
     }
 }
 

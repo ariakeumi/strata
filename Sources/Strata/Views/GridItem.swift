@@ -14,8 +14,6 @@ struct GridItemState: Equatable {
 /// optional detail line. Text and highlights are drawn; the image is an image view so thumbnails can crossfade in.
 final class GridItemView: NSView, ColorThemeUpdating {
     let imageView = NSImageView()
-    /// Git status, at the icon's top-right corner.
-    let gitBadge = GitStatusBadge()
     let cloudBadge = CloudBadge()
     private(set) var metrics = GridMetrics(iconSize: 64, typography: .standard)
     private var name = ""
@@ -44,8 +42,6 @@ final class GridItemView: NSView, ColorThemeUpdating {
         imageView.unregisterDraggedTypes()
         imageView.setAccessibilityElement(false)
         addSubview(imageView)
-        gitBadge.drawsBacking = true
-        addSubview(gitBadge)
         cloudBadge.drawsBacking = true
         addSubview(cloudBadge)
         setAccessibilityElement(true)
@@ -204,10 +200,8 @@ final class GridItemView: NSView, ColorThemeUpdating {
     override func layout() {
         super.layout()
         imageView.frame = iconRect
-        let size = NSSize(width: GitStatusBadge.tileSize.width + 4, height: GitStatusBadge.tileSize.height + 4)
-        gitBadge.frame = NSRect(x: iconRect.maxX - size.width + 3, y: iconRect.minY - 3, width: size.width, height: size.height)
-        // The cloud state sits in the other corner.
-        cloudBadge.frame = NSRect(x: iconRect.minX - 3, y: iconRect.minY - 3, width: size.width + 3, height: size.height)
+        // Keep the badge’s full frame, including its padding.
+        cloudBadge.frame = NSRect(x: iconRect.minX - 3, y: iconRect.minY - 3, width: 22, height: 18)
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -425,14 +419,13 @@ final class GridItem: NSCollectionViewItem {
     }
 
     func configure(_ entry: FileEntry, matches: [Int], metrics: GridMetrics, showsInfo: Bool, dimmed: Bool, scale: CGFloat,
-                   git: GitBadge? = nil, tags: [FinderTag] = [], cloud: CloudStatus? = nil, detailOverride: String? = nil,
+                   tags: [FinderTag] = [], cloud: CloudStatus? = nil, detailOverride: String? = nil,
                    preferences: Prefs, thumbnails: FileThumbnails, itemInfo: ItemInfoLoader) {
         self.itemInfo?.cancel(infoTicket)
         self.itemInfo = itemInfo
         infoTicket = nil
         infoRevision &+= 1
         let revision = infoRevision
-        itemView.gitBadge.badge = git
         itemView.cloudBadge.status = cloud
         itemView.setTags(tags)
         let sameFile = self.entry == entry

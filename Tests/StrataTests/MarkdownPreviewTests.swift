@@ -146,20 +146,4 @@ import Testing
         #expect(storage.length == count)
         #expect(tree.text("diagram.md") == "```mermaid\ngraph TD; A-->B\n```\n")
     }
-
-    @Test func markdownPreviewUsesDocumentSearchWhileFolderFilterKeepsItsMeaning() async throws {
-        let tree = try TestTree("folder/document.md")
-        try Data("# Chosen\nneedle needle".utf8).write(to: tree.url("folder/document.md"))
-        let environment = try PreviewEnvironment(tree)
-        let browser = BrowserViewController(services: environment.services)
-        environment.services.previews.show(try #require(FileEntry(url: tree.url("folder/document.md"))), from: browser, present: false)
-        let controller = try #require(environment.services.previews.content)
-        await controller.session.task?.value
-        #expect(controller.controls.search.isEnabled)
-        #expect(controller.controls.search.placeholderString == String(localized: "Find"))
-        controller.filter("needle")
-        #expect(controller.listing.query.isEmpty)
-        environment.services.previews.close()
-        #expect(tree.text("folder/document.md")?.contains("needle needle") == true)
-    }
 }

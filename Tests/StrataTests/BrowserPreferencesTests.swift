@@ -118,15 +118,13 @@ struct BrowserPreferencesTests {
         #expect(a.outlineView.rowHeight == 20 && b.outlineView.rowHeight == 35)
         #expect(try nameCell(a).textField?.font?.pointSize == 11)
         #expect(try nameCell(b).textField?.font?.pointSize == 16)
-        for browser in [a, b] {
-            browser.setMode(.grid, remember: false)
-            browser.setMode(.columns, remember: false)
-        }
+        for browser in [a, b] { browser.setMode(.grid, remember: false) }
+        #expect(try icon(a).itemView.metrics.typography.font.pointSize == 11)
+        #expect(try icon(b).itemView.metrics.typography.font.pointSize == 16)
+        for browser in [a, b] { browser.setMode(.columns, remember: false) }
         let aPane = try #require(views(a.columns.view, of: ColumnPane.self).first)
         let bPane = try #require(views(b.columns.view, of: ColumnPane.self).first)
         #expect(aPane.tableView.rowHeight == 18 && bPane.tableView.rowHeight == 33)
-        #expect(try icon(a).itemView.metrics.typography.font.pointSize == 11)
-        #expect(try icon(b).itemView.metrics.typography.font.pointSize == 16)
 
         first.preferences.nameTextSize = 14
         first.preferences.gridIconSize = 128
@@ -136,14 +134,15 @@ struct BrowserPreferencesTests {
         #expect(aPane.tableView.rowHeight == 21 && bPane.tableView.rowHeight == 33)
         #expect(try nameCell(a).textField?.font?.pointSize == 14)
         #expect(try nameCell(b).textField?.font?.pointSize == 16)
-        #expect(try icon(a).itemView.metrics.typography.font.pointSize == 14)
-        #expect(try icon(b).itemView.metrics.typography.font.pointSize == 16)
         #expect(a.grid.iconSize == 128 && b.grid.iconSize == 96)
         #expect(!a.grid.showsItemInfo && b.grid.showsItemInfo)
         #expect(a.outlineView.tableColumn(withIdentifier: .init("created"))?.isHidden == false)
         #expect(b.outlineView.tableColumn(withIdentifier: .init("created"))?.isHidden == true)
         let cell = try #require(aPane.tableView(aPane.tableView, viewFor: aPane.tableView.tableColumns.first, row: 0) as? NSTableCellView)
         #expect(cell.textField?.font?.pointSize == 14)
+        for browser in [a, b] { browser.setMode(.grid, remember: false) }
+        #expect(try icon(a).itemView.metrics.typography.font.pointSize == 14)
+        #expect(try icon(b).itemView.metrics.typography.font.pointSize == 16)
         #expect(first.preferences.nameTextSize == 14 && second.preferences.nameTextSize == 16)
         #expect(tree.snapshot() == ["alpha.txt"])
     }
@@ -398,18 +397,15 @@ struct BrowserPreferencesTests {
         browser.addToSidebar(nil)
         #expect(try await added(first.preferences, [tree.url(unique), tree.url("\(unique)/child")].map(\.standardizedFileURL.path)))
 
-        let folderTree = FolderTreeController(places: second.services.places, transfers: second.services.transfers,
-                                              preferences: second.preferences, remote: second.services.remote,
-                                              copies: second.services.copies, containerStore: second.services.containerStore,
-                                              clipboard: second.services.clipboard, watchBudget: .shared)
+        let folderTree = FolderTreeController(services: second.services, watchBudget: .shared)
         let item = NSMenuItem()
         item.representedObject = tree.url("another")
         folderTree.perform(NSSelectorFromString("addFavorite:"), with: item)
         #expect(try await added(second.preferences, [tree.url("another").standardizedFileURL.path]))
         #expect(first.preferences.favoritePaths?.count == 2)
 
-        let a = PathSuggestions(preferences: first.preferences, places: first.services.places, index: first.services.index)
-        let b = PathSuggestions(preferences: second.preferences, places: second.services.places, index: second.services.index)
+        let a = PathSuggestions(preferences: first.preferences, places: first.services.places)
+        let b = PathSuggestions(preferences: second.preferences, places: second.services.places)
         a.begin(at: tree.url("elsewhere")); b.begin(at: tree.url("elsewhere"))
         let aMatches = await a.suggestions(for: "\(unique)/child", in: tree.url("elsewhere"))
         let bMatches = await b.suggestions(for: "\(unique)/child", in: tree.url("elsewhere"))

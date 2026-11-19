@@ -1,6 +1,5 @@
 import AppKit
 import Testing
-@testable import StrataIndex
 @testable import Strata
 @testable import StrataAI
 @testable import StrataConnections
@@ -13,61 +12,6 @@ import Testing
 /// The Inspector keeps the main thread free: hidden, it reads nothing about the selection, and shown, it reads an
 /// item's settings and an image's size away from the main thread, keeping only the newest item's.
 @MainActor struct InspectorBackgroundTests {
-    @Test func unrelatedIndexChangesLeaveTheInspectorAloneButCurrentFolderChangesRefreshIt() async throws {
-        let tree = try TestTree("Documents/busy/build.o", "Documents/kept/readme.txt", "Documents/note.txt", "Library/cache.txt")
-        let environment = try IndependentEnvironment()
-        let window = BrowserWindowController(location: tree.url("Documents"), services: environment.services)
-        defer { window.close(); withExtendedLifetime(environment) {} }
-        await window.browser.directoryReads.task?.value
-        window.browser.outlineView.layoutSubtreeIfNeeded()
-        window.split.inspectorItem.isCollapsed = false
-        window.browser.select([tree.url("Documents/note.txt")])
-        let editor = window.split.inspector.infoEditor
-        let reading = try #require(editor.factsTask)
-        let sizeColumn = window.browser.outlineView.column(withIdentifier: .size)
-        let busyRow = window.browser.outlineView.row(forItem: window.browser.node(for: tree.url("Documents/busy")))
-        let keptRow = window.browser.outlineView.row(forItem: window.browser.node(for: tree.url("Documents/kept")))
-        let busyCell = try #require(window.browser.outlineView.view(atColumn: sizeColumn, row: busyRow, makeIfNecessary: true) as? TextCellView)
-        let keptCell = try #require(window.browser.outlineView.view(atColumn: sizeColumn, row: keptRow, makeIfNecessary: true) as? TextCellView)
-        busyCell.configure("stale-busy", alignment: .right)
-        keptCell.configure("stale-kept", alignment: .right)
-        func notify(_ path: String) {
-            var changes = IndexChanges()
-            changes.insert(tree.url(path).path)
-            NotificationCenter.default.post(name: .indexDidChange, object: environment.services.index,
-                                            userInfo: [FileIndex.changesKey: changes])
-        }
-        notify("Library/cache.txt")
-        #expect(editor.factsTask == reading && !reading.isCancelled)
-        // A sibling folder's churn reloads only that folder's size cell and leaves the selected file's Inspector alone.
-        notify("Documents/busy/build.o")
-        window.browser.outlineView.layoutSubtreeIfNeeded()
-        #expect(busyCell.textField?.stringValue != "stale-busy")
-        #expect(keptCell.textField?.stringValue == "stale-kept")
-        #expect(editor.factsTask == reading && !reading.isCancelled)
-        notify("Documents/note.txt")
-        #expect(editor.factsTask != reading && reading.isCancelled)
-        #expect(tree.snapshot() == ["Documents/", "Documents/busy/", "Documents/busy/build.o", "Documents/kept/",
-                                    "Documents/kept/readme.txt", "Documents/note.txt", "Library/", "Library/cache.txt"])
-    }
-
-    @Test func indexStatusUpdatesLeaveTheInspectorsCurrentReadAlone() async throws {
-        let tree = try TestTree("note.txt")
-        let environment = try IndependentEnvironment()
-        let window = BrowserWindowController(location: tree.root, services: environment.services)
-        defer { window.close(); withExtendedLifetime(environment) {} }
-        await window.browser.directoryReads.task?.value
-        window.split.inspectorItem.isCollapsed = false
-        window.browser.select([tree.url("note.txt")])
-        let editor = window.split.inspector.infoEditor
-        let reading = try #require(editor.factsTask)
-        NotificationCenter.default.post(name: .indexPhaseDidChange, object: environment.services.index)
-        window.browserCapacityDidChange(window.browser)
-        #expect(editor.factsTask == reading && !reading.isCancelled)
-        #expect(window.split.status.text == window.browser.statusText)
-        #expect(tree.snapshot() == ["note.txt"])
-    }
-
     @Test func aHiddenInspectorReadsNothingAndCatchesUpWhenShown() async throws {
         let tree = try TestTree("a.txt", "b.txt")
         let environment = try PreviewEnvironment(tree)

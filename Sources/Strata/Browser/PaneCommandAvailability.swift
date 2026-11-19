@@ -5,6 +5,7 @@ import AppKit
     var isEditingText: Bool { get }
     var isLoadingFolder: Bool { get }
     var hasFolder: Bool { get }
+    var canReloadResults: Bool { get }
     var showsEditableFolder: Bool { get }
     var isShowingResults: Bool { get }
     var isShowingTrash: Bool { get }
@@ -14,7 +15,6 @@ import AppKit
     var isInContainerCopy: Bool { get }
     var effectiveMode: BrowserViewMode { get }
     var selectedEntries: [FileEntry] { get }
-    var selectedApps: [URL] { get }
     var selectedArchives: [URL] { get }
     var selectedContainers: [ContainerInfo] { get }
     var clipboardHasFiles: Bool { get }
@@ -28,7 +28,10 @@ import AppKit
     var renameTitle: String { get }
     var compressTitle: String { get }
     var extractTitle: String { get }
-    var appUpdatesTitle: String { get }
+}
+
+extension PaneCommandState {
+    var canReloadResults: Bool { false }
 }
 
 /// Which of a pane's commands are on, and what the menu calls them, from what's true of the pane. The View options'
@@ -44,7 +47,7 @@ enum PaneCommandAvailability {
 
     static func answer(for action: Selector, represented: Any?, in pane: some PaneCommandState) -> Answer {
         if action == #selector(Pane.reloadFolder(_:)) {
-            return Answer(isEnabled: pane.hasFolder && !pane.isShowingResults)
+            return Answer(isEnabled: pane.isShowingResults ? pane.canReloadResults : pane.hasFolder)
         }
         // While a name is being edited, ⌘⌫, ⌘D, ⇧⌘N and ⌥⌘N belong to the text, not the file. While another folder loads,
         // the rows on screen are the previous folder's.
@@ -104,8 +107,6 @@ enum PaneCommandAvailability {
                           title: inTrash ? String(localized: "Put Back") : String(localized: "Move to Trash"))
         case #selector(Pane.putBack(_:)):
             return Answer(isEnabled: hasSelection && selected.allSatisfy { Trash.contains($0.url) })
-        case #selector(Pane.checkAppsForUpdates(_:)):
-            return Answer(isEnabled: !pane.selectedApps.isEmpty, title: pane.appUpdatesTitle)
         // A container's files are read only when copied out: no shelf, no share sheet, no Finder.
         case #selector(Pane.addToShelf(_:)) where pane.isInContainerCopy,
              #selector(Pane.share(_:)) where pane.isInContainerCopy,

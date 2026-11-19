@@ -53,6 +53,7 @@ struct FileThumbnailsTests {
         loader.cancel(a)
         #expect(generator.cancelled.isEmpty)
         loader.cancel(b)
+        #expect(loader.pendingKeysByPath.isEmpty)
         #expect(generator.cancelled.count == 1)
         _ = loader.request(entry, size: 64, scale: 2) { _ in replacement += 1 }
         #expect(generator.requests.count == 2)
@@ -70,7 +71,8 @@ struct FileThumbnailsTests {
         let a = try #require(FileEntry(url: tree.url("a.png")))
         let b = try #require(FileEntry(url: tree.url("b.png")))
         let generator = Generator()
-        let loader = generator.loader(cache: ThumbnailCache(costLimit: 16, observesMemoryPressure: false))
+        let cache = ThumbnailCache(costLimit: 16, observesMemoryPressure: false)
+        let loader = generator.loader(cache: cache)
         let original = try bitmap()
         var images: [NSImage] = []
         for (index, entry) in [a, b, a].enumerated() {
@@ -78,10 +80,14 @@ struct FileThumbnailsTests {
             #expect(generator.requests.count == index + 1)
             generator.requests[index].1(original, false)
             try await wait { images.count == index + 1 }
+            #expect(loader.pendingKeysByPath.isEmpty)
+            #expect(Set(cache.keysByPath.keys) == [entry.url.path])
         }
         #expect(loader.cached(b, size: 64, scale: 2) == nil)
         #expect(loader.cached(a, size: 32, scale: 2)?.exact == true)
         #expect(loader.cached(a, size: 128, scale: 2)?.exact == false)
+        cache.removeAll()
+        #expect(cache.keysByPath.isEmpty)
         for image in images {
             let drawn = try #require(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
             #expect(drawn.width == original.width && drawn.height == original.height)

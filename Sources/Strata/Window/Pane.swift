@@ -3,9 +3,9 @@ import AppKit
 /// What a pane shows. Searches and Recents are places in the history like folders.
 enum Destination: Equatable {
     case folder(URL)
-    case search(String, scope: URL?)
+    case search(String, scope: URL)
     case recents
-    case duplicates
+    case smb(UUID, title: String)
 }
 
 /// One side of a window: a browser with its own place and back/forward history.
@@ -46,6 +46,10 @@ final class Pane {
         opening.cancel()
         guard target != destination else { return }
         destination = target
+        switch target {
+        case .search, .recents: browser.onReloadResults = { [weak self] in self?.search.run() }
+        case .folder, .smb: browser.onReloadResults = nil
+        }
         navigationRevision += 1
         browser.cancelPendingActions()
         host.pathBar.cancelEditing()
@@ -57,8 +61,7 @@ final class Pane {
         location = folder
     }
 
-    /// Stops what the pane is doing in the background (duplicate hashing, a folder scan): its window or the pane is
-    /// closing.
+    /// Stops what the pane is doing in the background when its window or the pane closes.
     func stopBackgroundWork() {
         opening.cancel()
         host.pathBar.cancelEditing()
@@ -87,7 +90,7 @@ final class Pane {
             let shown = (browser.mode == .columns ? columnLocation : nil) ?? url
             let name = Places.displayName(shown, copies: browser.services.copies, names: browser.services.folderNames)
             return (name, Trash.isTrash(shown) ? "trash" : "folder")
-        case .search, .recents, .duplicates:
+        case .search, .recents, .smb:
             let title = ResultsTitle(destination)
             return (title?.window ?? "", title?.symbol ?? "")
         }
@@ -111,9 +114,8 @@ final class PaneHostViewController: NSViewController {
         self.browser = browser
         let services = browser.services
         status = BrowserStatusView(clipboard: services.clipboard)
-        pathBar = PathBar(preferences: services.preferences, places: services.places, index: services.index, copies: services.copies,
-                          names: services.folderNames, clipboard: services.clipboard,
-                          embedded: true)
+        pathBar = PathBar(preferences: services.preferences, places: services.places, copies: services.copies,
+                          names: services.folderNames, embedded: true)
         header = PaneHeaderView(pathBar: pathBar)
         super.init(nibName: nil, bundle: nil)
     }

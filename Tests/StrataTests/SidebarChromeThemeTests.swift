@@ -185,7 +185,7 @@ extension ColorThemeTests {
 private final class SidebarThemeToolbar: NSObject, NSToolbarDelegate {
     let main = NSToolbarItem(itemIdentifier: .init("ThemeMain"))
     var includesModes = false
-    let modes = NSToolbarItemGroup(itemIdentifier: .sidebarMode,
+    let modes = NSToolbarItemGroup(itemIdentifier: .init("ThemeSidebarModes"),
                                   images: [NSImage(systemSymbolName: "star", accessibilityDescription: nil)!,
                                            NSImage(systemSymbolName: "list.bullet.indent", accessibilityDescription: nil)!],
                                   selectionMode: .selectOne, labels: ["Places", "Folders"], target: nil, action: nil)
@@ -197,13 +197,13 @@ private final class SidebarThemeToolbar: NSObject, NSToolbarDelegate {
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar] + (includesModes ? [.sidebarMode] : [])
+        [.toggleSidebar] + (includesModes ? [modes.itemIdentifier] : [])
             + [.sidebarTrackingSeparator, main.itemIdentifier, .flexibleSpace, .inspectorTrackingSeparator, .toggleInspector]
     }
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { toolbarDefaultItemIdentifiers(toolbar) }
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        identifier == main.itemIdentifier ? main : identifier == .sidebarMode ? modes : nil
+        identifier == main.itemIdentifier ? main : identifier == modes.itemIdentifier ? modes : nil
     }
 }

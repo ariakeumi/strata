@@ -1,38 +1,21 @@
 import AppKit
 
-/// The inspector's developer cards for a project folder or repository root: what kind of project it is, git branch
-/// and changes, regenerable build artifacts with a Clean button, and runnable scripts.
-///
-/// Takes data (`configure(_:)` with a `ProjectInfo`); it never scans. Calling `configure` again for the same folder
-/// (for example when sizes arrive) updates in place and keeps the checkbox choices.
+/// Shows a project folder’s type, build artifact sizes and runnable scripts. Updates measured sizes in place.
 final class ProjectInspectorView: NSView {
-    /// Overrides the built-in confirm-and-trash flow.
-    var onClean: (([ProjectArtifact]) -> Void)?
-    /// Called after artifacts were moved to the Trash by the built-in flow, so the owner can reload.
-    var onDidClean: (([URL]) -> Void)?
     /// Overrides the built-in Run in Terminal.
     var onRunScript: ((ProjectScript) -> Void)?
 
     private(set) var info: ProjectInfo?
     let preferences: Prefs
-    let files: FileCommands
-    private let git: GitStatusStore
     private let clipboard: Clipboard
     private let stack = NSStackView()
-    private var deselected: Set<String> = []
     private var showsAllScripts = false
     private var artifactRows: [String: ArtifactRow] = [:]
     private var artifactsTotalLabel: NSTextField?
-    private var cleanButton: NSButton?
-    /// The Git card's content and the upstream in its header, so a status change refills just that card.
-    private var gitContent: NSStackView?
-    private var gitUpstream: String?
     private static let collapsedScriptCount = 6
 
-    init(frame: NSRect = .zero, files: FileCommands, git: GitStatusStore, clipboard: Clipboard) {
-        self.preferences = files.transfers.preferences
-        self.files = files
-        self.git = git
+    init(frame: NSRect = .zero, preferences: Prefs, clipboard: Clipboard) {
+        self.preferences = preferences
         self.clipboard = clipboard
         super.init(frame: frame)
         // Sections meet at the hairline, same as the Inspector's other cards.
@@ -49,24 +32,11 @@ final class ProjectInspectorView: NSView {
             rebuild()
             return
         }
-        if previous?.folder != info.folder {
-            deselected = []
-            explicitlySelected = []
-            showsAllScripts = false
-        }
+        if previous?.folder != info.folder { showsAllScripts = false }
         guard let previous, previous.folder == info.folder, previous.kinds == info.kinds, previous.scripts == info.scripts,
               previous.artifacts.map(\.id) == info.artifacts.map(\.id) else {
             rebuild()
             return
-        }
-        if previous.git != info.git {
-            // Files saved or a commit made: only the git status moved. Refill the Git card and leave the others be,
-            // rather than rebuilding every card each time a file in the repository changes.
-            guard let git = info.git, let gitContent, git.branch.upstream == gitUpstream else {
-                rebuild()
-                return
-            }
-            fillGit(git, into: gitContent)
         }
         updateArtifacts()
     }
@@ -77,9 +47,6 @@ final class ProjectInspectorView: NSView {
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         artifactRows = [:]
         artifactsTotalLabel = nil
-        cleanButton = nil
-        gitContent = nil
-        gitUpstream = nil
         guard let info else { return }
 
         // Each part is a card like the Inspector's others, collapsed and expanded the same way.
@@ -88,56 +55,12 @@ final class ProjectInspectorView: NSView {
             for kind in info.kinds { chips.add(KindChip(kind)) }
             let content = section()
             add(chips, to: content)
-            addCard(id: "project", title: String(localized: "Project", comment: "Inspector section title: the folder's software project (kind, git, build artifacts, scripts)"),
+            addCard(id: "project", title: String(localized: "Project", comment: "Inspector section title: the folder's software project"),
                     symbol: "chevron.left.forwardslash.chevron.right", content: content)
         }
-        if let git = info.git { buildGit(git) }
         if !info.artifacts.isEmpty { buildArtifacts(info.artifacts) }
         if !info.scripts.isEmpty { buildScripts(info.scripts) }
         updateArtifacts()
-    }
-
-    private func buildGit(_ git: ProjectGitSummary) {
-        let upstream = git.branch.upstream.map { label($0, size: 11, color: InspectorColors.tertiary) }
-        upstream?.lineBreakMode = .byTruncatingHead
-        let content = section()
-        fillGit(git, into: content)
-        gitContent = content
-        gitUpstream = git.branch.upstream
-        addCard(id: "git", title: "Git", symbol: "arrow.triangle.branch", content: content, accessory: upstream)
-    }
-
-    /// The branch line and the change counts.
-    private func fillGit(_ git: ProjectGitSummary, into content: NSStackView) {
-        content.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        let branch = BranchLine(git)
-        add(branch, to: content, spacingAfter: 7)
-
-        let items = FlowView(spacing: 12, lineSpacing: 4)
-        let counts = git.counts
-        if git.outcome == .timedOut {
-            items.add(StatusItem(nil, String(localized: "Status timed out", comment: "Git status didn't finish in time"), color: InspectorColors.tertiary))
-        } else if case .failed = git.outcome {
-            items.add(StatusItem(nil, String(localized: "Status unavailable", comment: "Git status couldn't be read"), color: InspectorColors.tertiary))
-        } else if counts.isClean {
-            items.add(StatusItem(symbol: "checkmark.circle", git.isRepositoryRoot ? String(localized: "Working tree clean", comment: "Git: no uncommitted changes")
-                : String(localized: "No changes in this folder", comment: "Git: no uncommitted changes inside the selected folder")))
-        } else {
-            let entries: [(Int, GitFileState, String)] = [
-                (counts.conflicted, .conflicted, String(localized: "\(counts.conflicted) conflicted", comment: "plural")),
-                (counts.modified, .modified, String(localized: "\(counts.modified) modified", comment: "plural")),
-                (counts.added, .added, String(localized: "\(counts.added) added", comment: "plural")),
-                (counts.deleted, .deleted, String(localized: "\(counts.deleted) deleted", comment: "plural")),
-                (counts.renamed, .renamed, String(localized: "\(counts.renamed) renamed", comment: "plural")),
-                (counts.untracked, .untracked, String(localized: "\(counts.untracked) untracked", comment: "plural")),
-            ]
-            for (count, state, title) in entries where count > 0 {
-                items.add(StatusItem(state.color, title))
-            }
-            if counts.staged > 0 { items.add(StatusItem(symbol: "tray.full", String(localized: "\(counts.staged) staged", comment: "plural"))) }
-        }
-        if git.stashCount > 0 { items.add(StatusItem(symbol: "archivebox", String(localized: "\(git.stashCount) stashes", comment: "plural"))) }
-        add(items, to: content)
     }
 
     private func buildArtifacts(_ artifacts: [ProjectArtifact]) {
@@ -145,22 +68,10 @@ final class ProjectInspectorView: NSView {
         artifactsTotalLabel = total
         let content = section()
         for artifact in artifacts {
-            let row = ArtifactRow(artifact, selected: isSelected(artifact))
-            row.onToggle = { [weak self] on in self?.toggle(artifact, on) }
+            let row = ArtifactRow(artifact)
             artifactRows[artifact.id] = row
             add(row, to: content, spacingAfter: 2)
         }
-        let button = NSButton(title: String(localized: "Clean", comment: "Button: move the selected build folders to the Trash"),
-                              target: self, action: #selector(cleanClicked))
-        button.bezelStyle = .push
-        button.controlSize = .regular
-        button.image = NSImage(systemSymbolName: "trash", accessibilityDescription: nil)
-        button.imagePosition = .imageLeading
-        button.imageHugsTitle = true
-        button.symbolConfiguration = .init(pointSize: 11, weight: .medium)
-        cleanButton = button
-        if let last = content.arrangedSubviews.last { content.setCustomSpacing(10, after: last) }
-        add(button, to: content)
         addCard(id: "artifacts", title: String(localized: "Build Artifacts", comment: "Inspector section title: regenerable build output folders"),
                 symbol: "shippingbox", content: content, accessory: total)
     }
@@ -206,64 +117,16 @@ final class ProjectInspectorView: NSView {
 
     // MARK: - Artifacts state
 
-    /// Opted-in folders that aren't selected by default (virtual environments).
-    private var explicitlySelected: Set<String> = []
-
-    private func isSelected(_ artifact: ProjectArtifact) -> Bool {
-        artifact.isSelectedByDefault ? !deselected.contains(artifact.id) : explicitlySelected.contains(artifact.id)
-    }
-
-    private func toggle(_ artifact: ProjectArtifact, _ on: Bool) {
-        if artifact.isSelectedByDefault {
-            if on { deselected.remove(artifact.id) } else { deselected.insert(artifact.id) }
-        } else {
-            if on { explicitlySelected.insert(artifact.id) } else { explicitlySelected.remove(artifact.id) }
-        }
-        updateArtifacts()
-    }
-
-    private var selectedArtifacts: [ProjectArtifact] {
-        (info?.artifacts ?? []).filter(isSelected)
-    }
-
     private func updateArtifacts() {
         guard let info else { return }
         for artifact in info.artifacts {
-            artifactRows[artifact.id]?.update(artifact, selected: isSelected(artifact))
+            artifactRows[artifact.id]?.updateSize(of: artifact)
         }
         let all = info.artifacts
         let known = all.compactMap(\.bytes).saturatingSum
         artifactsTotalLabel?.stringValue = info.isMeasuring
             ? (known > 0 ? String(localized: "\(Format.bytes(known))+", comment: "A total size still being measured: at least this much") : "")
             : Format.bytes(known)
-        let chosen = selectedArtifacts
-        let chosenBytes = chosen.compactMap(\.bytes).saturatingSum
-        let pending = chosen.contains { !$0.isMeasured }
-        if let cleanButton {
-            cleanButton.title = chosen.isEmpty ? String(localized: "Clean", comment: "Button: move the selected build folders to the Trash")
-                : pending ? String(localized: "Clean…", comment: "Button: move the selected build folders to the Trash (asks first)")
-                : String(localized: "Clean \(Format.bytes(chosenBytes))…", comment: "Button: move the selected build folders, this size in total, to the Trash (asks first)")
-            cleanButton.isEnabled = !chosen.isEmpty
-            cleanButton.toolTip = chosen.isEmpty ? String(localized: "Select folders to move to the Trash")
-                : String(localized: "Move \(chosen.map(\.name).joined(separator: ", ")) to the Trash", comment: "Tooltip; the placeholder is a list of folder names")
-        }
-    }
-
-    // MARK: - Actions
-
-    @objc private func cleanClicked() {
-        let chosen = selectedArtifacts
-        guard !chosen.isEmpty, let info else { return }
-        if let onClean { return onClean(chosen) }
-        guard let window else { return }
-        let folder = info.folder
-        ProjectActions.confirmClean(chosen, window: window, files: files) { [weak self, git] urls in
-            guard !urls.isEmpty else { return }
-            ProjectInfo.invalidateSizes(under: folder)
-            FolderSizer.invalidate(folder)
-            git.invalidate(containing: folder)
-            self?.onDidClean?(urls)
-        }
     }
 
     private func run(_ script: ProjectScript) {
@@ -299,9 +162,7 @@ final class ProjectInspectorView: NSView {
     private func add(_ view: NSView, to content: NSStackView, spacingAfter spacing: CGFloat = 6) {
         content.addArrangedSubview(view)
         view.translatesAutoresizingMaskIntoConstraints = false
-        if !(view is NSButton) || view === cleanButton {
-            view.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
-        }
+        view.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
         content.setCustomSpacing(spacing, after: view)
     }
 
@@ -435,142 +296,13 @@ private final class KindChip: NSView {
     }
 }
 
-/// Branch name, ahead/behind and an in-progress operation tag (a detached HEAD also gets a symbol).
-private final class BranchLine: NSView {
-    private let git: ProjectGitSummary
-
-    init(_ git: ProjectGitSummary) {
-        self.git = git
-        super.init(frame: .zero)
-        setAccessibilityElement(true)
-        setAccessibilityRole(.staticText)
-        var parts = [git.branch.isDetached ? String(localized: "Detached at \(git.branch.displayName)", comment: "Git: HEAD is detached at this commit")
-                     : String(localized: "Branch \(git.branch.displayName)", comment: "Git: the current branch")]
-        if git.branch.ahead > 0 { parts.append(String(localized: "\(git.branch.ahead) ahead", comment: "plural")) }
-        if git.branch.behind > 0 { parts.append(String(localized: "\(git.branch.behind) behind", comment: "plural")) }
-        if let operation = git.operation { parts.append(operation.title) }
-        setAccessibilityLabel(parts.joined(separator: ", "))
-        toolTip = git.branch.oid.map { "HEAD \(String($0.prefix(12)))" }
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    nonisolated override var isFlipped: Bool { true }
-    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 20) }
-
-    override func draw(_ dirtyRect: NSRect) {
-        // The card's header already shows the branch symbol; a detached HEAD gets its own.
-        let symbol = git.branch.isDetached ? NSImage(systemSymbolName: "smallcircle.filled.circle", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 13, weight: .medium).applying(.init(paletteColors: [InspectorColors.secondary]))) : nil
-        var x: CGFloat = 0
-        if let symbol {
-            let s = symbol.size
-            symbol.draw(in: NSRect(x: (16 - s.width) / 2, y: (bounds.height - s.height) / 2, width: s.width, height: s.height),
-                        from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-            x = 22
-        }
-        var trailing: [NSAttributedString] = []
-        var counts: [String] = []
-        if git.branch.ahead > 0 { counts.append("↑\(git.branch.ahead)") }
-        if git.branch.behind > 0 { counts.append("↓\(git.branch.behind)") }
-        if !counts.isEmpty {
-            trailing.append(NSAttributedString(string: counts.joined(separator: " "), attributes: [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium), .foregroundColor: InspectorColors.secondary,
-            ]))
-        }
-        if let operation = git.operation {
-            trailing.append(NSAttributedString(string: operation.title.uppercased(), attributes: [
-                .font: NSFont.systemFont(ofSize: 10, weight: .semibold), .foregroundColor: InspectorColors.conflict, .kern: 0.4,
-            ]))
-        }
-        let trailingWidth = trailing.reduce(0) { $0 + ceil($1.size().width) + 8 }
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byTruncatingMiddle
-        let font = git.branch.isDetached ? NSFont.monospacedSystemFont(ofSize: 12.5, weight: .semibold)
-            : NSFont.systemFont(ofSize: 13, weight: .semibold)
-        let name = NSAttributedString(string: git.branch.displayName, attributes: [
-            .font: font, .foregroundColor: InspectorColors.primary, .paragraphStyle: paragraph,
-        ])
-        let nameSize = name.size()
-        let nameWidth = min(ceil(nameSize.width), bounds.width - x - trailingWidth)
-        name.draw(with: NSRect(x: x, y: (bounds.height - nameSize.height) / 2, width: nameWidth, height: nameSize.height),
-                  options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
-        x += nameWidth + 8
-        for item in trailing {
-            let s = item.size()
-            item.draw(at: NSPoint(x: x, y: (bounds.height - s.height) / 2))
-            x += ceil(s.width) + 8
-        }
-    }
-}
-
-/// "● 3 modified": a colored dot (or a small symbol) and a count.
-final class StatusItem: NSView {
-    private let dot: NSColor?
-    private let symbol: NSImage?
-    let text: NSAttributedString
-
-    init(_ dot: NSColor?, _ title: String, color: NSColor = InspectorColors.secondary) {
-        self.dot = dot
-        symbol = nil
-        text = NSAttributedString(string: title, attributes: [.font: NSFont.systemFont(ofSize: 11.5), .foregroundColor: color])
-        super.init(frame: .zero)
-        configureAccessibility(title)
-    }
-
-    init(symbol name: String, _ title: String) {
-        dot = nil
-        symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 10.5, weight: .medium).applying(.init(paletteColors: [InspectorColors.secondary])))
-        text = NSAttributedString(string: title, attributes: [
-            .font: NSFont.systemFont(ofSize: 11.5), .foregroundColor: InspectorColors.secondary,
-        ])
-        super.init(frame: .zero)
-        configureAccessibility(title)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    private func configureAccessibility(_ title: String) {
-        setAccessibilityElement(true)
-        setAccessibilityRole(.staticText)
-        setAccessibilityLabel(title)
-    }
-
-    nonisolated override var isFlipped: Bool { true }
-
-    private var leading: CGFloat { dot != nil || symbol != nil ? 12 : 0 }
-
-    override var intrinsicContentSize: NSSize {
-        NSSize(width: ceil(leading + text.size().width), height: 16)
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let midY = bounds.height / 2
-        if let dot {
-            dot.setFill()
-            NSBezierPath(ovalIn: NSRect(x: 1, y: midY - 3, width: 6, height: 6)).fill()
-        } else if let symbol {
-            let s = symbol.size
-            symbol.draw(in: NSRect(x: (8 - s.width) / 2, y: midY - s.height / 2, width: s.width, height: s.height),
-                        from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-        }
-        let size = text.size()
-        text.draw(at: NSPoint(x: leading, y: midY - size.height / 2))
-    }
-}
-
-/// Checkbox, folder icon, name (plus "environment" for virtual envs) and size.
+/// A build artifact’s name and measured size.
 private final class ArtifactRow: NSView {
-    var onToggle: ((Bool) -> Void)?
-    private let checkbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let nameLabel: NSTextField
     private let sizeLabel = label("", size: 11, color: InspectorColors.secondary, monospacedDigits: true)
     private let spinner = NSProgressIndicator()
 
-    init(_ artifact: ProjectArtifact, selected: Bool) {
+    init(_ artifact: ProjectArtifact) {
         let name = NSMutableAttributedString(string: artifact.name, attributes: [
             .font: NSFont.systemFont(ofSize: 12), .foregroundColor: InspectorColors.primary,
         ])
@@ -587,10 +319,6 @@ private final class ArtifactRow: NSView {
         nameLabel = NSTextField(labelWithAttributedString: name)
         super.init(frame: .zero)
 
-        checkbox.controlSize = .small
-        checkbox.target = self
-        checkbox.action = #selector(toggled)
-        checkbox.setAccessibilityLabel(artifact.name)
         let icon = NSImageView(image: NSWorkspace.shared.icon(for: .folder))
         icon.imageScaling = .scaleProportionallyUpOrDown
         nameLabel.lineBreakMode = .byTruncatingMiddle
@@ -604,15 +332,13 @@ private final class ArtifactRow: NSView {
         spinner.isDisplayedWhenStopped = false
         toolTip = artifact.urls.map { Format.tildePath($0) }.joined(separator: "\n")
 
-        for view in [checkbox, icon, nameLabel, sizeLabel, spinner] as [NSView] {
+        for view in [icon, nameLabel, sizeLabel, spinner] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 22),
-            checkbox.leadingAnchor.constraint(equalTo: leadingAnchor),
-            checkbox.centerYAnchor.constraint(equalTo: centerYAnchor),
-            icon.leadingAnchor.constraint(equalTo: checkbox.trailingAnchor, constant: 4),
+            icon.leadingAnchor.constraint(equalTo: leadingAnchor),
             icon.centerYAnchor.constraint(equalTo: centerYAnchor),
             icon.widthAnchor.constraint(equalToConstant: 16),
             icon.heightAnchor.constraint(equalToConstant: 16),
@@ -624,14 +350,13 @@ private final class ArtifactRow: NSView {
             spinner.trailingAnchor.constraint(equalTo: trailingAnchor),
             spinner.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
-        update(artifact, selected: selected)
+        updateSize(of: artifact)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    func update(_ artifact: ProjectArtifact, selected: Bool) {
-        checkbox.state = selected ? .on : .off
+    func updateSize(of artifact: ProjectArtifact) {
         if let bytes = artifact.bytes {
             sizeLabel.stringValue = Format.bytes(bytes)
             spinner.stopAnimation(nil)
@@ -642,10 +367,6 @@ private final class ArtifactRow: NSView {
         let size = artifact.bytes.map(Format.bytes)
             ?? String(localized: "measuring", comment: "Accessibility: the folder's size is still being measured")
         setAccessibilityLabel("\(artifact.name), \(size)")
-    }
-
-    @objc private func toggled() {
-        onToggle?(checkbox.state == .on)
     }
 }
 

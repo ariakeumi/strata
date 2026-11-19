@@ -10,7 +10,6 @@ import UniformTypeIdentifiers
 @testable import StrataQueue
 @testable import StrataModel
 @testable import StrataSearch
-@testable import StrataIndex
 @testable import StrataPreviews
 @testable import StrataSupport
 
@@ -60,12 +59,6 @@ import UniformTypeIdentifiers
         }
         #expect(await ItemFacts.load(tree.url("Notes.one")).kind == section)
         #expect(InfoEditor.typeName(of: tree.url("Notes.one")) == section)
-        let hit = IndexHit(path: tree.url("Notes.one").path, isDirectory: false, isPackage: false, size: 0, files: 0,
-                           mtime: 0, score: 0)
-        #expect(FileEntry(hit: hit).kind == section)
-        let node = ArchiveNode(name: "Notes.one", isDirectory: false, size: 9)
-        let member = PreviewItem(.member(node, path: ["Notes.one"]))
-        #expect(member.kind == section)
         #expect(tree.snapshot() == ["Notebook.ONEPKG", "Notes.one", "Open Notebook.onetoc2", "alias.one", "folder.one/",
                                     "link.one -> Notes.one"])
     }
@@ -102,30 +95,6 @@ import UniformTypeIdentifiers
         #expect(await loaded(tree.url("Custom.one")) !== page)
         #expect(try marked(page))
         #expect(tree.snapshot() == ["Custom.one", "Notes.one", "alias.one", "folder.one/", "link.one -> Notes.one"])
-    }
-
-    @Test(.enabled(if: undeclared)) func spaceShowsAnArchivesSectionByItsKindAndPage() async throws {
-        let tree = try TestTree("pack.tar")
-        let environment = try PreviewEnvironment(tree)
-        let record = ArchiveRecord(path: ["Notes.one"], kind: 1, size: 7, modified: .distantPast,
-                                          body: Data("section".utf8))
-        let access = PreviewArchiveAccess(copying: { _, _, _, _ in [record] })
-        let session = PreviewSession(reader: environment.services.directories, archiveAccess: access)
-        let content = PreviewBrowserController(session: session, preferences: environment.preferences,
-                                               thumbnails: environment.services.thumbnails,
-                                               copies: environment.services.copies, clipboard: environment.services.clipboard)
-        _ = content.view
-        session.show(try #require(FileEntry(url: tree.url("pack.tar"))), showHidden: true, applications: .standard)
-        await session.task?.value
-        let member = try #require(session.roots.first { $0.name == "Notes.one" })
-        let page = try page("one")
-        #expect(member.kind == section && member.icon(environment.services.thumbnails) === page)
-        let column = try #require(content.outline.tableColumns.first { $0.identifier.rawValue == "previewName" })
-        let cell = try #require(content.outlineView(content.outline, viewFor: column, item: member) as? NameCellView)
-        #expect(cell.imageView?.image === page)
-        content.close()
-        #expect(tree.snapshot().filter { !$0.hasPrefix("environment/") } == ["pack.tar"])
-        withExtendedLifetime(environment) {}
     }
 
     /// The conflict sheet and the Shelf show what's there now, not an icon remembered from before.

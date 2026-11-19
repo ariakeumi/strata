@@ -22,21 +22,35 @@ package nonisolated struct KeychainAccess: Sendable {
 /// never in preferences.
 package nonisolated struct RemoteKeychain: Sendable {
     package static let shared = RemoteKeychain(access: .system)
-    private static let service = "Strata S3"
-
     private let access: KeychainAccess
 
     package init(access: KeychainAccess) { self.access = access }
 
-    private func query(for server: RemoteServer) -> [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: Self.service,
-         kSecAttrAccount as String: server.id]
-    }
+    package var smb: KeychainSecrets { KeychainSecrets(access: access, service: "Strata SMB") }
+    private var s3: KeychainSecrets { KeychainSecrets(access: access, service: "Strata S3") }
 
     package func setSecret(_ secret: String, for server: RemoteServer) -> Bool {
-        let base = query(for: server)
-        let changes: [String: Any] = [kSecValueData as String: Data(secret.utf8),
-                                      kSecAttrLabel as String: "Strata S3: \(server.bucket ?? server.host)"]
+        s3.set(secret, account: server.id, label: "Strata S3: \(server.bucket ?? server.host)")
+    }
+
+    package func secret(for server: RemoteServer) -> String? { s3.secret(account: server.id) }
+
+    @discardableResult
+    package func delete(_ server: RemoteServer) -> Bool { s3.delete(account: server.id) }
+}
+
+package nonisolated struct KeychainSecrets: Sendable {
+    let access: KeychainAccess
+    let service: String
+
+    private func query(account: String) -> [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+         kSecAttrAccount as String: account]
+    }
+
+    package func set(_ secret: String, account: String, label: String) -> Bool {
+        let base = query(account: account)
+        let changes: [String: Any] = [kSecValueData as String: Data(secret.utf8), kSecAttrLabel as String: label]
         // Updating retains the item's native access policy and leaves its old value intact on failure.
         let updated = access.update(base as CFDictionary, changes as CFDictionary)
         if updated == errSecSuccess { return true }
@@ -50,18 +64,19 @@ package nonisolated struct RemoteKeychain: Sendable {
         return access.update(base as CFDictionary, changes as CFDictionary) == errSecSuccess
     }
 
-    package func secret(for server: RemoteServer) -> String? {
-        var query = query(for: server)
+    package func secret(account: String, interactive: Bool = true) -> String? {
+        var query = query(account: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
+        if !interactive { query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUISkip }
         let (status, result) = access.copy(query as CFDictionary)
         guard status == errSecSuccess, let data = result as? Data else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
     @discardableResult
-    package func delete(_ server: RemoteServer) -> Bool {
-        let status = access.delete(query(for: server) as CFDictionary)
+    package func delete(account: String) -> Bool {
+        let status = access.delete(query(account: account) as CFDictionary)
         return status == errSecSuccess || status == errSecItemNotFound
     }
 }

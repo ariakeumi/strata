@@ -46,12 +46,11 @@ import Testing
         }
     }
 
-    @Test func nativeSpaceAndInspectorAcceptAChineseDocument() async throws {
+    @Test func inspectorAcceptsAChineseDocument() async throws {
         let tree = try TestTree("说明.md")
         let original = Self.documents[0]
         try Data(original.utf8).write(to: tree.url("说明.md"))
         let environment = try PreviewEnvironment(tree)
-        let browser = BrowserViewController(services: environment.services)
         let entry = try #require(FileEntry(url: tree.url("说明.md")))
         let inspector = InspectorViewController(services: environment.services, previewScheduler: { $0.perform() })
         inspector.view.frame = NSRect(x: 0, y: 0, width: 400, height: 700)
@@ -59,12 +58,6 @@ import Testing
         let rich = try #require(inspector.richPreview as? MarkdownPreviewView)
         await rich.loadingTask?.value
         #expect(rich.textView.string.contains("中文"))
-        environment.services.previews.show(entry, from: browser, present: false)
-        let content = try #require(environment.services.previews.content)
-        await content.session.task?.value
-        #expect(content.controls.search.isEnabled)
-        content.filter("中文")
-        environment.services.previews.close()
         #expect(tree.text("说明.md") == original)
         withExtendedLifetime(environment) {}
     }

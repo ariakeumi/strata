@@ -83,12 +83,13 @@ package final class TagStore {
     }
 
     /// Last known tags only: sorting must never read extended attributes inside its comparator.
-    package func cachedTags(for url: URL) -> [FinderTag] { cache[url.lexicallyStandardized.path] ?? [] }
+    package func cachedTags(for url: URL) -> [FinderTag] { url.isFileURL ? cache[url.lexicallyStandardized.path] ?? [] : [] }
 
     /// `url`'s tags, in the order they were added, as last read. One not read yet, or changed since, is read away from
     /// the main thread with the others asked about meanwhile, and `.tagsLoaded` says when: a list of search results
     /// read each row's tags as it drew it. Changing tags reads them from disk first, never from here.
     package func tags(for url: URL) -> [FinderTag] {
+        guard url.isFileURL else { return [] }
         let path = url.lexicallyStandardized.path
         if let cached = cache[path], !stale.contains(path) { return cached }
         request(path)

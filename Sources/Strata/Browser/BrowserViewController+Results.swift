@@ -1,30 +1,28 @@
 import AppKit
 
-/// Search results, recent files and duplicate groups shown in place of the folder, and a message while they're found.
+/// Search results, recent files and messages shown in place of the folder.
 extension BrowserViewController {
     /// Shows `entries` (search results or recent files) in place of the folder, keeping their order until a column
     /// header is clicked. `total` is how many matched before the list was capped.
     func showResults(_ entries: [FileEntry], total: Int) {
-        // A search refreshed because the index changed nearly always finds the same files: the list, its selection
+        // When a refreshed search finds the same files, the list, its selection
         // and the Inspector stay as they are, and only rows whose size or date moved are redrawn.
-        if isShowingResults, pending.selection == nil, case .matched = results.tally, loadError == nil, updateResultsInPlace(entries) {
-            localizeResultNames()
-            if results.tally != .matched(total) {
-                results.tally = .matched(total)
+        if isShowingResults, pending.selection == nil, results.total != nil, loadError == nil, updateResultsInPlace(entries) {
+            if results.total != total {
+                results.total = total
                 delegate?.browserContentDidChange(self)
             }
             return
         }
         // Read before switching to the list: in other views the list's own selection is stale and could point at a file
         // nobody picked.
-        let selection = pending.selection ?? selectedURLs
+        let selection = pending.selection ?? presentationSelection.map(\.url)
         enterResults()
         loading.showResults()
         sizer.cancelPending()
         mediaInfo.cancelPending()
-        results.tally = .matched(total)
+        results.total = total
         listing.replace(entries, preservingNodes: false, sort: sort)
-        localizeResultNames()
         outlineView.reloadData()
         pushContent()
         select(selection, scroll: false)
@@ -53,68 +51,16 @@ extension BrowserViewController {
         return true
     }
 
-    /// Shows groups of files under header rows, all expanded (duplicate sets).
-    func showGroups(_ groups: [ResultGroup], summary: String) {
-        let selection = pending.selection ?? selectedURLs
-        enterResults()
-        loading.showResults()
-        sizer.cancelPending()
-        mediaInfo.cancelPending()
-        results.tally = .summary(summary)
-        listing.replaceGroups(groups)
-        localizeResultNames()
-        outlineView.reloadData()
-        outlineView.expandItem(nil, expandChildren: true)
-        pushContent()
-        select(selection, scroll: false)
-        pending.selection = nil
-        updateEmptyState()
-        delegate?.browserContentDidChange(self)
-        delegate?.browserSelectionDidChange(self)
-    }
-
-    func showGroups(_ groups: [(title: String, detail: String, entries: [FileEntry])], summary: String) {
-        showGroups(groups.map { ResultGroup(title: $0.title, detail: $0.detail, entries: $0.entries) }, summary: summary)
-    }
-
-    /// Resolve index hits' visible names without blocking search or changing their file identities.
-    private func localizeResultNames() {
-        let gen = generation
-        let targets = nodes.flatMap { $0.children ?? [$0] }.filter { $0.entry.isDirectory || $0.entry.isPackage }
-        guard !targets.isEmpty else { return }
-        let entries = targets.map(\.entry)
-        Task { [weak self] in
-            let localized = await FileEntry.localizedNames(entries)
-            guard let self, isShowingResults, gen == generation, !inlineRename.isEditing else { return }
-            let selection = selectedURLs
-            let expanded = nodes.filter { outlineView.isItemExpanded($0) }
-            var changed = false
-            for (node, pair) in zip(targets, zip(entries, localized)) where node.entry == pair.0 && pair.0 != pair.1 {
-                node.entry = pair.1
-                changed = true
-            }
-            guard changed else { return }
-            listing.sort { nodes in
-                if case .matched = results.tally { sort(&nodes) }
-            }
-            outlineView.reloadData()
-            for node in expanded { outlineView.expandItem(node) }
-            pushContent()
-            select(selection, scroll: false)
-            delegate?.browserSelectionDidChange(self)
-        }
-    }
-
     /// Replaces the list with a message while results are being computed, or in place of results there can't be.
     func showMessage(symbol: String, title: String, message: String = "", button: (String, () -> Void)? = nil) {
         noteNavigationContextChanged()
         activeView?.cancelRename()
         enterResults()
-        loading.showResults(loaded: false)
+        loading.showResults(loaded: false, forgetDirectory: smbShares != nil)
         sizer.cancelPending()
         mediaInfo.cancelPending()
         listing.clear()
-        results.tally = .summary("")
+        results.total = nil
         outlineView.reloadData()
         pushContent()
         emptyState.show(symbol: symbol, title: title, message: message, button: button)
@@ -130,7 +76,7 @@ extension BrowserViewController {
             folderOptions?.refresh()
             installActiveView()
             syncSortDescriptor()
-            results.makeRoomForWhere(in: outlineView)
+            if smbShares == nil { results.makeRoomForWhere(in: outlineView) }
             fitNameColumn()
             clearFilter()
         }
@@ -148,5 +94,45 @@ extension BrowserViewController {
         results.restoreColumns(in: outlineView)
         fitNameColumn()
         syncSortDescriptor()
+    }
+
+    func showSMBShareList(at root: URL?, reload: @escaping () -> Void) -> SMBSharePage {
+        let previous = smbShares
+        if previous == nil && isShowingResults {
+            leaveResults()
+        }
+        let shares = SMBSharePage(root: root, mode: previous?.mode ?? mode, onReload: reload)
+        let selection = previous != nil && previous?.root == root ? presentationSelection.map(\.url) : []
+        let choice = previous == nil ? BrowserOrdering.Choice(key: .name, ascending: true) : ordering.choice
+        smbShares = shares
+        watching.stop()
+        clearFilter()
+        showMessage(symbol: "network", title: String(localized: "Loading…"))
+        pending.selection = selection
+        if let choice { ordering.choose(choice) }
+        syncSortDescriptor()
+        installActiveView()
+        return shares
+    }
+
+    func publishSMBShares(_ names: [String], open: @escaping (String) -> Void) {
+        guard let smbShares, let root = smbShares.root else { return }
+        smbShares.onOpen = open
+        let kind = FileEntry.kind(extension: "", isDirectory: true, isPackage: false, size: nil, system: nil, type: nil)
+        let entries = names.map { name in
+            FileEntry(url: root.appending(component: name, directoryHint: .notDirectory), name: name,
+                      isDirectory: true, isPackage: false, isHidden: false, isSymlink: false, isVolume: false,
+                      size: nil, modified: nil, created: nil, added: nil, kind: kind, contentType: nil)
+        }
+        showResults(entries, total: entries.count)
+    }
+
+    func leaveSMBShareList() {
+        guard smbShares != nil else { return }
+        listing.clear()
+        outlineView.reloadData()
+        pushContent()
+        smbShares = nil
+        leaveResults()
     }
 }

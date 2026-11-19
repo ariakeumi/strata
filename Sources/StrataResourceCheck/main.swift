@@ -1,16 +1,14 @@
 import AppKit
 import StrataPreviews
 import StrataSupport
-import StrataTheme
 
 @main struct StrataResourceCheck {
-    enum Invalid: Error { case sample, themes, image }
+    enum Invalid: Error { case sample, image }
 
     static func main() async {
         NSApplication.shared.setActivationPolicy(.prohibited)
         do {
             guard CommandLine.arguments.count == 2 else { throw Invalid.sample }
-            guard !(try ThemeCatalog.loadBundled()).isEmpty else { throw Invalid.themes }
             try await modelScripts()
             guard !(try await MathRenderer.script()).isEmpty else { throw Invalid.sample }
             let url = URL(fileURLWithPath: CommandLine.arguments[1])
@@ -20,7 +18,7 @@ import StrataTheme
             defer { renderer.close() }
             let image = try await renderer.render(source, dark: false)
             guard image.size.width > 0, image.size.height > 0 else { throw Invalid.image }
-            print("Packaged themes, model scripts, KaTeX and Mermaid loaded; the Markdown sample rendered successfully.")
+            print("Packaged model scripts, KaTeX and Mermaid loaded; the Markdown sample rendered successfully.")
         } catch {
             print("Packaged resource check failed: \(error)")
             exit(2)

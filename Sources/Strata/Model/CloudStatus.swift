@@ -235,7 +235,7 @@ extension Notification.Name {
     private static let keptFolders = 48
 
     package func status(for url: URL) -> CloudStatus? {
-        statuses[url.lexicallyStandardized.path]
+        url.isFileURL ? statuses[url.lexicallyStandardized.path] : nil
     }
 
     /// Reads listed items by their captured, lexically normalized path keys, without renormalizing URLs on the UI thread.

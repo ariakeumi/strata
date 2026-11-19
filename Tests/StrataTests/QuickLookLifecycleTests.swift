@@ -168,6 +168,9 @@ struct QuickLookLifecycleTests {
             charactersIgnoringModifiers: "\u{F701}", isARepeat: false, keyCode: 125))
         #expect(browser.previewPanel(nil, handle: down))
         #expect(browser.selectedURLs == [tree.url("b.pdf")])
+        browser.select([tree.url("a.pdf"), tree.url("b.pdf")])
+        #expect(!browser.previewPanel(nil, handle: down))
+        #expect(Set(browser.selectedURLs) == [tree.url("a.pdf"), tree.url("b.pdf")])
         #expect(clipboard.changeCount == clipboardChange)
         #expect(tree.snapshot() == ["a.pdf", "b.pdf"])
     }

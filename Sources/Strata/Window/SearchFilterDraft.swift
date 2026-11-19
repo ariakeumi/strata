@@ -1,5 +1,4 @@
 import Foundation
-import StrataIndex
 
 /// Edits only the chosen filter terms. Other spelling, quoted names and advanced syntax stay with the search.
 nonisolated struct SearchFilterDraft: Equatable {
@@ -47,18 +46,18 @@ nonisolated struct SearchFilterDraft: Equatable {
         if !after[2].isEmpty {
             if after[2].contains("..") {
                 let bounds = after[2].components(separatedBy: "..")
-                guard bounds.count == 2, bounds.allSatisfy({ $0.isEmpty || IndexQuery.bytes($0.lowercased()) != nil }) else { return nil }
+                guard bounds.count == 2, bounds.allSatisfy({ $0.isEmpty || SearchQuery.bytes($0.lowercased()) != nil }) else { return nil }
             }
-            let parsed = IndexQuery.parse("size:" + SearchTerms.quote(after[2]))
+            let parsed = SearchQuery.parse("size:" + SearchTerms.quote(after[2]))
             guard parsed.minSize != nil || parsed.maxSize != nil,
                   (parsed.minSize ?? 0) <= (parsed.maxSize ?? .max) else { return nil }
         }
         if !after[3].isEmpty {
             if after[3].contains("..") {
                 let bounds = after[3].components(separatedBy: "..")
-                guard bounds.count == 2, bounds.allSatisfy({ $0.isEmpty || IndexQuery.parse("modified:>" + $0).modifiedAfter != nil }) else { return nil }
+                guard bounds.count == 2, bounds.allSatisfy({ $0.isEmpty || SearchQuery.parse("modified:>" + $0).modifiedAfter != nil }) else { return nil }
             }
-            let parsed = IndexQuery.parse("modified:" + SearchTerms.quote(after[3]))
+            let parsed = SearchQuery.parse("modified:" + SearchTerms.quote(after[3]))
             guard parsed.modifiedAfter != nil || parsed.modifiedBefore != nil,
                   (parsed.modifiedAfter ?? 0) < (parsed.modifiedBefore ?? .max) else { return nil }
         }
@@ -69,7 +68,7 @@ nonisolated struct SearchFilterDraft: Equatable {
             terms.append(Self.keys[index][0] + ":" + SearchTerms.quote(after[index]))
         }
         let updated = terms.joined(separator: " ")
-        // Spotlight does not implement the index's regex, path matching, exclusions or exact-case mode.
+        // Spotlight does not implement the local search’s regex, path matching, exclusions or exact-case mode.
         if !after[4].isEmpty {
             guard SpotlightQuery.acceptsSourceNames(updated) else { return nil }
         }

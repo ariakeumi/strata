@@ -83,25 +83,6 @@ struct CabinetArchiveTests {
         }
     }
 
-    @Test func aOneNotePackageOpensInSpaceAsItsTreeWithoutExtracting() async throws {
-        let tree = try TestTree("outside")
-        try write(Self.lzx, to: tree.url("Notebook.onepkg"))
-        let environment = try PreviewEnvironment(tree)
-        let before = tree.snapshot()
-        let browser = BrowserViewController(services: environment.services)
-        _ = browser.view
-        let entry = try #require(FileEntry(url: tree.url("Notebook.onepkg")))
-        environment.services.previews.show(entry, from: browser, present: false)
-        let content = try #require(environment.services.previews.content)
-        await content.session.task?.value
-        #expect(content.session.error == nil && content.session.archive?.files == 4)
-        #expect(content.session.roots.map(\.name).sorted() == ["dir1", "dir2", "empty", "zero"])
-        #expect(content.fileView.shownURL == nil && environment.services.transfers.jobs.isEmpty)
-        environment.services.previews.close()
-        #expect(tree.snapshot() == before)
-        withExtendedLifetime(environment) {}
-    }
-
     @Test func extractWritesEveryMemberWhereItsCabinetPutsIt() async throws {
         let tree = try TestTree("out/", "outside")
         try write(Self.lzx, to: tree.url("Notebook.onepkg"))

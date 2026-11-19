@@ -39,7 +39,7 @@ struct DiskSpaceTests {
         return (url, logical, allocated)
     }
 
-    @Test func aSparseFilesAllocationSurvivesListingIndexingAndPersistence() async throws {
+    @Test func aSparseFilesAllocationSurvivesListingAndSearch() async throws {
         let tree = try TestTree()
         let file = try sparseFile(in: tree)
         let entry = try #require(FileEntry(url: file.url))
@@ -50,24 +50,8 @@ struct DiskSpaceTests {
         #expect(measured.bytes == file.logical && measured.files == 1)
         #expect(measured.allocatedBytes == file.allocated)
 
-        let store = IndexStore()
-        let root = store.write { $0.addRoot(path: tree.root.path, mtime: 0) }
-        IndexScanner(store: store, excluded: [], noiseFolders: []).scan([(root, tree.root.path)], threads: 1)
-        store.write { $0.aggregate() }
-        #expect(store.read { $0.size[Int(root)] } == file.logical)
-        #expect(store.read { $0.allocatedSize(root) } == file.allocated)
-        let search = IndexSearch.run(IndexQuery.parse("large.raw"), in: store, limit: 10)
-        let hit = try #require(search.hits.first).scored(123)
-        #expect(FileEntry(hit: hit).allocatedSize == file.allocated)
-        let environment = try IndependentEnvironment()
-        defer { withExtendedLifetime(environment) {} }
-        try IndexPersistence.save(store, eventID: 0, excluded: [], to: tree.url("index.sealed"), storage: environment.storage)
-        let (loaded, _) = try IndexPersistence.load(from: tree.url("index.sealed"), storage: environment.storage)
-        #expect(loaded.read { $0.allocatedSize(root) } == file.allocated)
-        #expect(loaded.read { $0.size[Int(root)] } == file.logical)
-        let compact = loaded.read { $0.compacted() }
-        #expect(compact.read { $0.allocatedSize(root) } == file.allocated)
-        #expect(tree.snapshot() == ["index.sealed", "large.raw"])
+        let search = await FolderSearch.run("large.raw", in: tree.root, showHidden: false)
+        #expect(search?.entries.first?.allocatedSize == file.allocated)
     }
 
     @Test func freeSpaceAndReclaimableAvailabilityRemainDistinctInTheFooter() async throws {
@@ -137,50 +121,6 @@ struct DiskSpaceTests {
         #expect(map.items.first?.bytes == nil)
         #expect(map.items.first?.sizeUnavailable == true)
         #expect(tree.snapshot() == ["file.txt"])
-    }
-
-    @Test func unknownAllocationRecoversAfterAnUpdateOrRemoval() {
-        let store = IndexStore()
-        store.write { s in
-            let root = s.addRoot(path: "/synthetic", mtime: 0)
-            let names = Array("ab".utf8)
-            let items = [
-                ScannedItem(nameOffset: 0, nameLength: 1, isDirectory: false, isPackage: false, isSymlink: false,
-                            isHidden: false, isMountPoint: false, size: 100, mtime: 0, allocatedSize: 4096),
-                ScannedItem(nameOffset: 1, nameLength: 1, isDirectory: false, isPackage: false, isSymlink: false,
-                            isHidden: false, isMountPoint: false, size: 200, mtime: 0),
-            ]
-            let ids = names.withUnsafeBytes { s.appendChildren(items, nameBuffer: $0, of: root) }
-            _ = s.finishedAllocationRead(of: root)
-            s.aggregate()
-            #expect(s.allocatedSize(root) == nil)
-            s.setTestAllocation(1024, of: ids.lowerBound + 1)
-            #expect(s.allocatedSize(root) == 5120)
-            s.setTestAllocation(nil, of: ids.lowerBound)
-            #expect(s.allocatedSize(root) == nil)
-            s.remove(ids.lowerBound)
-            #expect(s.allocatedSize(root) == 1024)
-            #expect(s.size[Int(root)] == 200)
-        }
-    }
-
-    @Test func anUnreadFolderStaysUnknownUntilItsOwnReadFinishes() {
-        let store = IndexStore()
-        store.write { s in
-            let root = s.addRoot(path: "/synthetic", mtime: 0)
-            let item = ScannedItem(nameOffset: 0, nameLength: 1, isDirectory: false, isPackage: false,
-                isSymlink: false, isHidden: false, isMountPoint: false, size: 20, mtime: 0, allocatedSize: 4096)
-            let ids = Array("a".utf8).withUnsafeBytes { s.appendChildren([item], nameBuffer: $0, of: root) }
-            s.aggregate()
-            s.setTestAllocation(nil, of: ids.lowerBound)
-            s.setTestAllocation(8192, of: ids.lowerBound)
-            #expect(s.allocatedSize(root) == nil)
-            let recovered = s.finishedAllocationRead(of: root)
-            #expect(recovered)
-            #expect(s.allocatedSize(root) == 8192)
-            let changedAgain = s.finishedAllocationRead(of: root)
-            #expect(!changedAgain)
-        }
     }
 
     @Test func arrivingFolderSizesKeepTheDiskUsageMeasurement() throws {

@@ -7,7 +7,6 @@ final class NameCellView: NSTableCellView, ColorThemeUpdating {
 
     private let icon = NSImageView()
     private let label = NSTextField(labelWithString: "")
-    private let gitBadge = GitStatusBadge()
     private let tagDots = TagDotsView()
     private let cloudBadge = CloudBadge()
     private var typography = FileViewTypography.standard
@@ -24,7 +23,6 @@ final class NameCellView: NSTableCellView, ColorThemeUpdating {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        gitBadge.translatesAutoresizingMaskIntoConstraints = false
         icon.translatesAutoresizingMaskIntoConstraints = false
         icon.imageScaling = .scaleProportionallyUpOrDown
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -39,7 +37,6 @@ final class NameCellView: NSTableCellView, ColorThemeUpdating {
         addSubview(label)
         addSubview(tagDots)
         addSubview(cloudBadge)
-        addSubview(gitBadge)
         imageView = icon
         textField = label
         NSLayoutConstraint.activate([
@@ -50,12 +47,10 @@ final class NameCellView: NSTableCellView, ColorThemeUpdating {
             label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 7),
             tagDots.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: 4),
             tagDots.trailingAnchor.constraint(lessThanOrEqualTo: cloudBadge.leadingAnchor, constant: -2),
-            cloudBadge.trailingAnchor.constraint(equalTo: gitBadge.leadingAnchor),
+            cloudBadge.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
             cloudBadge.centerYAnchor.constraint(equalTo: centerYAnchor),
             tagDots.centerYAnchor.constraint(equalTo: centerYAnchor),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
-            gitBadge.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
-            gitBadge.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
 
@@ -63,7 +58,7 @@ final class NameCellView: NSTableCellView, ColorThemeUpdating {
     required init?(coder: NSCoder) { fatalError() }
 
     /// `thumbnail` is the file to show a Quick Look thumbnail of in place of `image`, when Quick Look has one.
-    func configure(name: String, icon image: NSImage, matches: [Int], dimmed: Bool, git: GitBadge? = nil,
+    func configure(name: String, icon image: NSImage, matches: [Int], dimmed: Bool,
                    tags: [FinderTag] = [], cloud: CloudStatus? = nil, thumbnail entry: FileEntry? = nil,
                    thumbnails: FileThumbnails, scale: CGFloat = 2,
                    typography: FileViewTypography) {
@@ -71,7 +66,6 @@ final class NameCellView: NSTableCellView, ColorThemeUpdating {
         self.name = name
         self.matches = matches
         self.dimmed = dimmed
-        gitBadge.badge = git
         cloudBadge.status = cloud
         tagDots.tags = tags
         tagDots.alphaValue = dimmed ? 0.45 : 1
@@ -128,7 +122,6 @@ final class NameCellView: NSTableCellView, ColorThemeUpdating {
 
     override var backgroundStyle: NSView.BackgroundStyle {
         didSet {
-            gitBadge.backgroundStyle = backgroundStyle
             tagDots.backgroundStyle = backgroundStyle
             cloudBadge.backgroundStyle = backgroundStyle
             render()
@@ -211,46 +204,4 @@ final class TextCellView: NSTableCellView, ColorThemeUpdating {
     }
 
     func updateColorTheme() { updateColor() }
-}
-
-/// A header row above a group of files: icon, a bold title and a secondary detail.
-final class GroupHeaderCellView: NSTableCellView {
-    private let icon = NSImageView()
-    private let title = NSTextField(labelWithString: "")
-    private let detail = NSTextField(labelWithString: "")
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        for view in [icon, title, detail] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(view)
-        }
-        title.font = .systemFont(ofSize: 13, weight: .semibold)
-        title.lineBreakMode = .byTruncatingMiddle
-        title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        detail.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
-        detail.textColor = .secondaryLabelColor
-        detail.setContentCompressionResistancePriority(.required, for: .horizontal)
-        imageView = icon
-        NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
-            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 18),
-            icon.heightAnchor.constraint(equalToConstant: 18),
-            title.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 8),
-            title.centerYAnchor.constraint(equalTo: centerYAnchor),
-            detail.leadingAnchor.constraint(equalTo: title.trailingAnchor, constant: 10),
-            detail.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8),
-            detail.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    func configure(title text: String, detail info: String, icon image: NSImage) {
-        title.stringValue = text
-        detail.stringValue = info
-        icon.image = image
-    }
 }

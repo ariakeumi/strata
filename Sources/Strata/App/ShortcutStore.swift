@@ -140,8 +140,13 @@ final class ShortcutStore {
         walk(menu, path: [])
         // Choices for commands that no longer exist go.
         let current = overrides
-        let valid = current.filter { items[$0.key] != nil }
-        if valid.count != current.count { preferences.set(try? JSONEncoder().encode(valid), forKey: Self.overridesKey) }
+        var valid = current.filter { items[$0.key] != nil }
+        // A new built-in shortcut may already belong to a command the user customized.
+        let reassigned = Set(valid.values.filter { !$0.key.isEmpty })
+        for (id, combo) in defaults where valid[id] == nil && alternateOf[id] == nil && reassigned.contains(combo) {
+            valid[id] = .cleared
+        }
+        if valid != current { preferences.set(try? JSONEncoder().encode(valid), forKey: Self.overridesKey) }
         apply()
     }
 

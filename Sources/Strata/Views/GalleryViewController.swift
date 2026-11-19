@@ -2,7 +2,7 @@ import AppKit
 import Quartz
 
 /// Gallery view, like Finder's: a large preview of the selected item over a strip of thumbnails. ←/→ step through the
-/// folder, Space opens Quick Look, Return renames (or opens, per Settings); typing filters, as everywhere else. Like
+/// folder, Space opens Quick Look, Return opens (or renames, per Settings); typing filters, as everywhere else. Like
 /// Finder's, something is always selected, so the preview always has something to show.
 final class GalleryViewController: NSViewController, FileItemCollection, FileCollectionHost {
     let thumbnails: FileThumbnails
@@ -242,31 +242,45 @@ final class GalleryViewController: NSViewController, FileItemCollection, FileCol
         hasPartialListing = !content.complete
     }
 
-    /// Shows `entries` in order, keeping the selection for items still there (or the first item).
+    private var savedPosition: CollectionPosition?
+
+    func releaseListing() {
+        savedPosition = CollectionPosition(strip, entries: entries, lead: lead)
+        stopBackgroundWork()
+        iconView.image = nil
+        entries = []
+        indexByKey = [:]
+        lead = nil
+        anchor = nil
+        hasPartialListing = false
+        strip.reloadData()
+    }
+
     private var hasPartialListing = false
+
+    /// Shows `entries` in order, keeping the selection for items still there (or the first item).
     func setEntries(_ entries: [FileEntry], incremental: Bool = false) {
         loadViewIfNeeded()
         if renameField != nil {
             deferredEntries = entries
             return
         }
-        let selection = Set(selectedURLs)
-        let viewport = CollectionViewport.capture(strip, entries: self.entries)
-        let leadURL = lead.flatMap { $0 < self.entries.count ? self.entries[$0].url : nil }
-        let insertions = incremental ? FileInsertions.plan(from: self.entries, to: entries) : nil
+        let position = savedPosition ?? CollectionPosition(strip, entries: self.entries, lead: lead)
+        let insertions = incremental && savedPosition == nil ? FileInsertions.plan(from: self.entries, to: entries) : nil
+        savedPosition = nil
         self.entries = entries
         indexByKey.removeAll(keepingCapacity: true)
         for (i, entry) in entries.enumerated() { indexByKey[entry.url.fileViewKey] = i }
         if let insertions {
             strip.insertItems(at: Set(insertions.map { IndexPath(item: $0, section: 0) }))
         } else { strip.reloadData() }
-        var kept = selection.compactMap { indexByKey[$0.fileViewKey] }
+        var kept = position.selection.compactMap { indexByKey[$0.fileViewKey] }
         if kept.isEmpty, !entries.isEmpty { kept = [0] }
         strip.selectionIndexPaths = Set(kept.map { IndexPath(item: $0, section: 0) })
-        let newLead = leadURL.flatMap { indexByKey[$0.fileViewKey] } ?? kept.min()
+        let newLead = position.lead.flatMap { indexByKey[$0.fileViewKey] } ?? kept.min()
         // A refresh (a download growing, say) leaves the strip where you scrolled it.
-        if leadURL.flatMap({ indexByKey[$0.fileViewKey] }) == nil, let newLead { scrollToItem(newLead) }
-        else { viewport?.restore(in: strip) { indexByKey[$0] } }
+        if position.lead.flatMap({ indexByKey[$0.fileViewKey] }) == nil, let newLead { scrollToItem(newLead) }
+        else { position.viewport?.restore(in: strip) { indexByKey[$0] } }
         lead = newLead
         anchor = lead
         reportSelection()
@@ -343,7 +357,7 @@ final class GalleryViewController: NSViewController, FileItemCollection, FileCol
 
     @objc private func clipboardChanged() { refreshVisibleItems() }
 
-    /// Redraws the thumbnails' dimming, plates and badges (clipboard, git, focus, appearance), optionally re-reading thumbnails.
+    /// Redraws the thumbnails' dimming, plates and badges (clipboard, focus, appearance), optionally re-reading thumbnails.
     func refreshVisibleItems(reconfigure: Bool = false, paths: Set<String>? = nil) {
         for case let item as GalleryThumbnailItem in strip.visibleItems() {
             if let paths, !paths.contains(item.entry?.url.path ?? "") { continue }
@@ -372,7 +386,7 @@ final class GalleryViewController: NSViewController, FileItemCollection, FileCol
     }
 
     private func isDimmed(_ entry: FileEntry) -> Bool {
-        entry.isHidden || clipboard.isCut(entry.url) || statuses.git.isIgnored(entry.url)
+        entry.isHidden || clipboard.isCut(entry.url)
     }
 
     // MARK: - Preview
@@ -624,7 +638,7 @@ final class GalleryRootView: NSView {
     }
 }
 
-/// The thumbnail strip: keys go where the list sends them (typing filters, Space previews, Return renames or opens).
+/// The thumbnail strip: keys go where the list sends them (typing filters, Space previews, Return opens or renames).
 final class GalleryStripView: FileCollectionView {
     fileprivate var controller: GalleryViewController? { host as? GalleryViewController }
 

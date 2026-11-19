@@ -6,7 +6,7 @@
 
 <h1 align="center">Strata Files</h1>
 
-<p align="center"><b>为你的 Mac 而生的文件管理器。</b><br> 毫秒间找到文件，看清磁盘空间的去向，用键盘轻快地处理文件。<br> 原生体验，仿佛 macOS 自带。</p>
+<p align="center"><b>你的 Mac 值得拥有的文件管理器。</b><br> 搜索当前文件夹、查看磁盘空间去向，并用键盘操作，<br> 体验如同 macOS 内置的原生应用。</p>
 
 <p align="center">
   <a href="https://github.com/cristipufu/strata-files/releases/latest"><img src="https://img.shields.io/github/v/release/cristipufu/strata-files?style=flat&amp;label=release&amp;color=8150cf" alt="最新版本" height="20"></a>
@@ -21,7 +21,7 @@
 <!-- readme-languages:end -->
 
 <p align="center">
-  <img src="../screenshots/themes.png" alt="以蓝色、蓝绿色、沙色、紫色和原生系统浅色模式显示演示文件夹的 Strata" width="900">
+  <img src="../screenshots/hero.png" alt="列表视图，实时显示文件夹大小" width="900">
 </p>
 
 ---
@@ -30,37 +30,35 @@
 
 Finder 本来够用，直到你需要寻找文件、查明磁盘被什么占满，或移动几百个文件却不想等着彩球转圈。Strata 保留你熟悉的外观、快捷键、拖放、快速查看和标签页，再补上你一直想要的功能：
 
-- **跟得上你的搜索。** 输入时即可搜索个人文件夹和“应用程序”中的所有文件。索引建好后，即使有数百万个文件，也能在毫秒间显示结果。
-- **值得信赖的大小显示。** 打开文件夹就能看到实际大小，文件变化时也会及时更新。
+- **文件夹搜索。** 按 ⌘F 搜索当前文件夹及其子文件夹。
+- **文件夹大小。** 在检查器和磁盘用量视图中测量空间。
 - **键盘优先的工作方式。** 按 ⌘K 前往任意位置，输入文字就能筛选文件夹，愿意的话全程不用鼠标。
 - **安心处理文件。** 暂停大型拷贝，在替换前并排比较冲突文件，即使退出应用后也能撤销之前的操作。
-- **为创造者准备。** 每个文件都有 Git 状态，清理功能识别项目类型，还能在终端中打开，预览代码、数据和压缩包。
+- **为创造者准备。** 在终端中打开文件夹，并预览代码、数据和压缩包。
 
-## 想找的，即刻找到
+## 搜索当前文件夹
 
-输入名称、使用精确筛选条件，或用日常英语描述：*“videos bigger than 500 MB”*、*“pdfs from last month”*。Strata 能理解这些查询，展示解析出的条件，并在你输入完之前给出结果。还可使用 `regex:` 和 **区分大小写**，或借助 Spotlight 搜索内容与元数据：`camera:iphone`、`width:>1920`、`duration:>10m`、*“photos taken with iPhone”*。将搜索存到边栏后，结果会随文件变化实时更新。
+按名称搜索、使用筛选条件，或输入 *"videos bigger than 500 MB"*、*"pdfs from last month"* 等查询。搜索文件名时可使用 `regex:` 和**区分大小写**。`camera:iphone`、`width:>1920` 和 `duration:>10m` 等查询通过 Spotlight 查找元数据。将搜索保存到边栏即可再次运行。
 
 <p align="center"><img src="../screenshots/search.png" alt="用日常英语搜索大型视频文件的结果" width="820"></p>
 
 ## 按 ⌘K，想去哪就去哪
 
-一个快捷键即可打开命令面板，找到常用文件夹、索引中的文件以及 Strata 命令。输入 `acme-web/`，无需打开窗口就能列出项目内容；也可以输入 `pdfs from last week` 这样的英语查询。
+按快捷键打开命令面板，查找常用文件夹、当前文件夹中的项目和 Strata 命令。输入 `acme-web/` 可列出项目内容。
 
-喜欢 Windows 那样的搜索框？开启“设置 ▸ 通用 ▸ Dock 中的搜索框”，Strata 图标旁就会出现搜索框。无论身处哪个应用，都能使用与 ⌘K 相同的搜索，还能按内容查找应用和文档。
+在「设置 ▸ 通用 ▸ 程序坞中的搜索框」中开启此功能，即可查找应用、文件夹和命令，也可以在 Strata 的当前文件夹中开始搜索。
 
 <p align="center"><img src="../screenshots/palette.png" alt="命令面板列出项目文件夹的内容" width="820"></p>
 
 ## 看清空间都用在了哪里
 
-打开文件夹就能看到大小，无需等待“正在计算…”。切换到 **磁盘使用情况**，用地图查看文件夹；再通过边栏的 **大文件** 和 **重复项目**，几分钟内就能腾出数 GB 空间。
+打开文件夹就能看到大小，无需等待“正在计算…”。切换到 **磁盘使用情况**，用地图查看文件夹。
 
 <p align="center"><img src="../screenshots/treemap.webp" alt="文件夹的磁盘使用情况地图" width="820"></p>
 
 ## 查看内容，不必离开。
 
-按下**空格键**即可预览文件，或查看文件夹和归档中的内容。浏览列表或缩略图，在旁边预览文件，无需离开当前文件夹即可筛选、排序、打开或复制所需内容。 保持快速查看打开，使用方向键在文件之间切换。
-
-<p align="center"><img src="../screenshots/quicklook.webp" alt="主窗口上方的快速查看，显示文件夹内容并预览 Markdown 文件" width="820"></p>
+按**空格键**，使用 macOS 快速查看预览所选项目。检查器还提供针对不同文件格式的预览。
 
 | 格式 | 可用功能 |
 |---|---|
@@ -68,11 +66,11 @@ Finder 本来够用，直到你需要寻找文件、查明磁盘被什么占满�
 | **Jupyter 笔记本 (`.ipynb`)** | 在同一视图中阅读 Markdown、代码单元格和已保存的输出。 |
 | **代码与配置** | 为 Swift、Python、JavaScript、TypeScript、Rust、Go、C/C++、Shell 脚本、YAML、TOML、XML、Dockerfile 等提供语法高亮、行号、查找和自动换行。 |
 | **JSON** | 无需打开编辑器即可阅读格式化的 JSON、JSONC 和 JSON5。 |
-| **JSON Lines、HAR 和 Xcode 目录** | 在 `.jsonl`、`.ndjson`、`.har` 和 `.xcstrings` 文件中搜索行。 |
-| **字幕 (`.srt`, `.vtt`)** | 在可搜索的表格中查看字幕和时间戳。 |
+| **JSON Lines、HAR 和 Xcode 目录** | 浏览 `.jsonl`、`.ndjson`、`.har` 和 `.xcstrings` 文件中的数据行。 |
+| **字幕 (`.srt`, `.vtt`)** | 在表格中查看字幕和时间戳。 |
 | **HTML** | 在渲染后的页面和源代码之间切换。 |
-| **CSV、TSV 和 PSV** | 逐页浏览数据，对列排序，查找值，并复制单个单元格或矩形区域。 |
-| **SQLite** | 选择表或视图，逐页浏览数据行，排序、查找并复制单元格。 |
+| **CSV、TSV 和 PSV** | 逐页浏览数据，对列排序，并复制单个单元格或矩形区域。 |
+| **SQLite** | 选择表或视图，逐页浏览数据行，排序并复制单元格。 |
 | **Excel 和 OpenDocument (`.xlsx`, `.ods`)** | 切换工作表，使用相同的表格操作查看已保存的值。 |
 | **Parquet** | 查看文件架构、列类型和行数。 |
 | **NumPy 和 AI 模型** | 查看 NumPy (`.npy`)、SafeTensors 和 GGUF 文件中的数组形状与张量详情。 |
@@ -81,47 +79,34 @@ Finder 本来够用，直到你需要寻找文件、查明磁盘被什么占满�
 | **路线 (`.gpx`, `.kml`, `.geojson`)** | 在地图上浏览路线，并查看距离和海拔详情。 |
 | **证书和描述文件** | 查看 `.cer`、`.crt`、`.der`、`.pem`、`.mobileprovision` 和 `.provisionprofile` 文件中的身份、有效期和签名详情。 |
 | **STL 和 3MF 模型** | 旋转和缩放 3D 模型，查看三角形数量与尺寸。 |
-| **EPUB 与漫画** | 阅读 EPUB、CBZ、CBR、CB7 和 CBT 文件中的图书章节与漫画页面。 |
+| **EPUB 与漫画** | 阅读 EPUB 章节，浏览漫画归档。 |
 | **OneNote** | 浏览笔记本目录，阅读分区页面（`.one`、`.onetoc2`），或查看打包的笔记本（`.onepkg`）。 |
-| **归档与软件包** | 浏览 ZIP、7z、RAR、TAR、ISO 和 CAB，以及 JAR、APK、IPA、WHL 等软件包。预览或复制其中的单个文件。 |
+| **归档与软件包** | 列出 ZIP、7z、RAR、TAR、ISO 和 CAB 归档，以及 JAR、APK、IPA、WHL 等软件包的内容。 |
 
-PDF 支持选择和复制文本。照片、音频和视频提供原生预览，包括视频故事板和音频波形。其他格式使用 macOS 快速查看。检查器中也能预览文件。
+检查器支持在 PDF 预览中选择和复制文本，并显示视频分镜和音频波形。
 
 ## 五种视图。两个窗格。
 
-图标、列表、分栏、画廊和磁盘使用情况，一个快捷键就能切换（⌘1–⌘5，顺序与 Finder 一致）。在列表和分栏中，可用 ⌘+ 和 ⌘− 调整文字大小。开启 **双窗格**，并排处理两个文件夹，用快捷键在两侧拷贝或移动，也能比较和同步。
+图标、列表、分栏、画廊和磁盘使用情况，一个快捷键就能切换（⌃⌘1–⌃⌘5，顺序与 Finder 一致）。在列表和分栏中，可用 ⌘+ 和 ⌘− 调整文字大小。开启 **双窗格**，并排处理两个文件夹，用快捷键在两侧拷贝或移动，也能比较和同步。
 
 <table>
   <tr>
-    <td><strong>图标 · ⌘1</strong><br><img src="../screenshots/grid.webp" alt="带图像缩略图的图标视图"></td>
-    <td><strong>列表 · ⌘2</strong><br><img src="../screenshots/list.webp" alt="列表视图，实时显示文件夹大小"></td>
+    <td><strong>图标 · ⌃⌘1</strong><br><img src="../screenshots/grid.webp" alt="带图像缩略图的图标视图"></td>
+    <td><strong>列表 · ⌃⌘2</strong><br><img src="../screenshots/list.webp" alt="列表视图，实时显示文件夹大小"></td>
   </tr>
   <tr>
-    <td><strong>分栏 · ⌘3</strong><br><img src="../screenshots/columns.webp" alt="分栏视图，展开多层文件夹并预览图像"></td>
-    <td><strong>画廊 · ⌘4</strong><br><img src="../screenshots/gallery.webp" alt="画廊视图，带大幅照片预览和缩略图栏"></td>
+    <td><strong>分栏 · ⌃⌘3</strong><br><img src="../screenshots/columns.webp" alt="分栏视图，展开多层文件夹并预览图像"></td>
+    <td><strong>画廊 · ⌃⌘4</strong><br><img src="../screenshots/gallery.webp" alt="画廊视图，带大幅照片预览和缩略图栏"></td>
   </tr>
   <tr>
-    <td><strong>磁盘使用情况 · ⌘5</strong><br><img src="../screenshots/disk-usage.webp" alt="磁盘使用情况视图按大小映射文件夹"></td>
+    <td><strong>磁盘使用情况 · ⌃⌘5</strong><br><img src="../screenshots/disk-usage.webp" alt="磁盘使用情况视图按大小映射文件夹"></td>
     <td><strong>双窗格 · ⌘\</strong><br><img src="../screenshots/dual.webp" alt="双窗格，并排显示项目文件和照片"></td>
   </tr>
 </table>
 
-## 你的配色，熟悉的 Mac。
-
-<p align="center"><img src="../screenshots/appearance.webp" alt="外观设置，显示颜色主题和“系统”选项" width="632"></p>
-
-选择 **系统** 保留 Mac 原有配色，或从十七种主题中挑选：**石墨、蓝色、绿色、紫色、沙色、蓝绿色、玫瑰色、琥珀色、岩灰、鼠尾草绿、珊瑚、梅紫、冰蓝、午夜、Catppuccin、Dracula 和 Tokyo Night**。每种主题都有浅色和深色配色，协调应用于文件视图、边栏、检查器、工具栏及辅助窗口。macOS 原生控件和熟悉的操作方式保持不变。
-
-在 **设置 ▸ 外观 ▸ 颜色主题** 中选择。关闭 **窗口色调**，即可保留原生背景，仅在选中区域和强调色中使用主题。还可以调整行间密度与文件名字号。
-
-想用自己的配色？把主题 JSON 文件放进 `~/Library/Application Support/Strata/Themes/`，然后在设置中选择它。想贡献它的话，添加该文件和名称的翻译，再重新构建即可，无需修改 Swift 代码。[主题指南](../themes.md)介绍了文件格式，以及浅色、深色和辅助功能的检查要求。
-
 ## 为开发者准备
 
-### 代码仓库
-
-- **Git 状态一目了然。** 每个文件旁显示状态，路径栏显示当前分支。
-- **项目工具就在检查器中。** Strata 识别 Node、Rust、Swift、.NET、Python、Go 等项目。运行项目脚本，或清理 `node_modules` 等构建文件夹以释放空间；清理会将它们移到废纸篓。
+- **项目工具就在检查器中。** Strata 识别 Node、Rust、Swift、.NET、Python、Go 等项目。 你可以运行项目脚本，并查看 `node_modules` 等构建文件夹占用的空间。
 - **文件旁即可预览。** 在检查器中阅读代码、Markdown、HTML、JSON、CSV、SQLite 数据库和压缩包。
 
 ### 服务器
@@ -140,13 +125,6 @@ PDF 支持选择和复制文本。照片、音频和视频提供原生预览，�
 - **就地管理容器。** 通过上下文菜单或检查器启动、停止、重启或暂停容器，查看镜像、端口、挂载点和 Compose 服务。
 - **控制 Compose 堆栈。** 一起启动、停止或重启项目中的容器，并在终端或代码编辑器中打开项目。
 
-<table>
-  <tr>
-    <td><img src="../screenshots/devmode.png" alt="Git 标记、分支标签与代码预览"></td>
-    <td><img src="../screenshots/project.png" alt="项目检查器显示构建产物与脚本"></td>
-  </tr>
-</table>
-
 ## 你期待的其他功能，也都用心做好
 
 | | |
@@ -154,14 +132,12 @@ PDF 支持选择和复制文本。照片、音频和视频提供原生预览，�
 | **废纸篓** | 像 Finder 一样在边栏中操作：放回原处（也支持经 Finder 移入废纸篓的项目）、立即删除、清倒废纸篓，并统计其他磁盘上的废纸篓。 |
 | **归档文件** | 安全地压缩和解压 zip、tar、7z、rar 等格式：文件不会越出目标文件夹，下载文件保留隔离属性。也可双击 zip，像文件夹一样浏览并拷贝内容。 |
 | **标签** | 随处可用的 Finder 标签：彩色圆点、上下文菜单的颜色行、检查器的标签栏、边栏的标签分区，以及搜索中的 `tag:`。 |
-| **书籍与漫画** | 显示 EPUB、CBZ、CBR、CB7 和 CBT 的封面缩略图。按空格键浏览漫画页面，在快速查看或检查器中阅读 EPUB 章节，并使用 `kind:book` 或 `kind:comic` 搜索。 |
 | **批量重命名** | 替换文字或正则表达式、添加文字、按格式编号或更改大小写。结果实时预览，一步即可撤销。 |
 | **显示简介** | 直接在检查器中编辑注释、打开文件的应用、锁定状态和权限。 |
-| **应用更新** | 右键点按应用，选择“检查更新…”，即可从应用自身的更新源或 App Store 确认是否有新版本。 |
 | **网络共享** | 使用 macOS 原生登录和钥匙串连接 SMB、AFP、NFS 和 WebDAV 共享（⌥⌘K）。SFTP 服务器和 S3 存储桶见上文。 |
 | **云端文件夹** | 查看哪些文件仅存于 iCloud Drive 或其他云端文件夹，并使用“立即下载”和“移除下载”。 |
 | **比较与同步** | 比较两个窗格的文件夹，进行双向、单向或镜像同步，支持验证和撤销。 |
-| **你的快捷键，你的外观** | 在设置中更改任意菜单快捷键，选择浅色或深色模式下的颜色主题，调整行间密度和文件名字号。 |
+| **你的快捷键，你的外观** | 在设置中更改任意菜单快捷键。外观可跟随系统，也可选用浅色或深色。还可调整行间距和文件名的字号。 |
 | **拷贝队列** | 大型拷贝在后台进行，可暂停、继续或取消。冲突会提前显示，支持并排比较、文本差异和文件夹合并。在设置中开启 **验证拷贝**，确认每个字节都已正确到达。跨磁盘移动时，若原文件在拷贝过程中发生变化，会保留原文件。 |
 | **历史记录** | 重命名、移动、拷贝和删除都会记录下来。只要项目仍在操作后留下的位置，即使几天后或重启后也能撤销。 |
 | **最近使用** | 集中显示个人文件夹中最近 7 天修改过的文件。 |
@@ -181,7 +157,7 @@ PDF 支持选择和复制文本。照片、音频和视频提供原生预览，�
 
 ## 隐私融入设计
 
-Strata 完全在你的 Mac 上运行。搜索索引、摘要和 AI 功能均在本地处理：无需账户、没有跟踪、不用云端。文件索引、内容索引和历史记录在磁盘上加密，密钥存于钥匙串。浏览文件夹也不会运行其中的代码：Strata 会禁用下载的仓库可能借以执行代码的 Git 功能。它仅在检查更新（经你允许检查自身更新，或应你的要求检查其他应用更新）及连接你指定的服务器时联网。容器和服务器的文件在浏览时按需读取，退出 Strata 后清理本地副本；SFTP 使用你自己的 SSH 环境，S3 秘密访问密钥保留在钥匙串中。
+Strata 完全在你的 Mac 上运行。搜索、摘要和 AI 功能均在本地处理：无需账户、没有跟踪、不用云端。操作历史在磁盘上加密，密钥存于钥匙串。Strata 会连接你添加的服务器。容器和服务器的文件在浏览时按需读取，退出 Strata 后清理本地副本；SFTP 使用你自己的 SSH 环境，S3 秘密访问密钥保留在钥匙串中。
 
 关于本地数据、存储、权限、网络连接及可用控制项的详情，请阅读 [Strata 应用隐私政策](https://stratafiles.app/zh-hans/privacy/)。
 
@@ -195,7 +171,7 @@ README 的译文以本英文原稿为源，从翻译目录生成。请参阅 [RE
 
 ## 获取 Strata
 
-从 [GitHub Releases](https://github.com/cristipufu/strata-files/releases/latest) 下载最新版，打开磁盘映像，将 Strata 拖入“应用程序”。需要搭载 Apple silicon 且运行 **macOS 26** 的 Mac。发行版均经过签名和 Apple 公证，可像普通应用一样打开。通过 **Strata ▸ 检查更新…** 或经你允许自动更新；安装前会检查更新的签名。
+从 [GitHub Releases](https://github.com/cristipufu/strata-files/releases/latest) 下载最新版，打开磁盘映像，将 Strata 拖入“应用程序”。需要搭载 Apple silicon 且运行 **macOS 26** 的 Mac。发行版均经过签名和 Apple 公证，可像普通应用一样打开。
 
 Homebrew:
 
@@ -215,7 +191,7 @@ scripts/build.sh release --open
 
 ## 发布版本
 
-推送版本标签后，[Release 工作流程](../../.github/workflows/release.yml) 会在 Mac 上构建 Strata，使用 Developer ID 证书签名，交由 Apple 公证，然后发布 GitHub Release，包含 `Strata.dmg`、`Strata.zip`、校验和以及 `appcast.xml`，也就是已安装副本检查的签名更新源。若存在 `docs/release-notes/<version>.md`，则用作发行说明，并显示在更新窗口中。
+推送版本标签后，[Release 工作流程](../../.github/workflows/release.yml) 会在 Mac 上构建 Strata，使用 Developer ID 证书签名，交由 Apple 公证，然后发布 GitHub Release，包含 `Strata.dmg`、`Strata.zip` 和校验和。若存在 `docs/release-notes/<version>.md`，则用作发行说明。
 
 ```sh
 git tag v0.2.0 && git push origin v0.2.0

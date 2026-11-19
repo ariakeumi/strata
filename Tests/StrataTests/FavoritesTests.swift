@@ -23,6 +23,20 @@ import Testing
         return checks
     }
 
+    @Test func pinnedMediaFoldersUseTheirOwnSymbols() async throws {
+        let preferences = try Prefs.isolated()
+        let places = await checks(preferences, missing: [])
+        let pictures = Places.home.appending(path: "Pictures", directoryHint: .isDirectory)
+        let movies = Places.home.appending(path: "Movies", directoryHint: .isDirectory)
+        let otherPictures = movies.appending(path: "Pictures", directoryHint: .isDirectory)
+
+        #expect(Places.favorites(preferences: preferences, checks: places).allSatisfy { $0.url != pictures && $0.url != movies })
+        preferences.favoritePaths = [pictures.path, movies.path, otherPictures.path]
+        let symbols = Places.favorites(preferences: preferences, checks: places).map(\.symbol)
+        #expect(symbols == ["photo", "film", "folder"])
+        #expect(symbols.allSatisfy { NSImage(systemSymbolName: $0, accessibilityDescription: nil) != nil })
+    }
+
     @Test func addingAndMovingKeepsTheOrderShown() async throws {
         let tree = try TestTree("a/", "b/", "c/", "d/")
         let preferences = try Prefs.isolated()
@@ -69,14 +83,15 @@ import Testing
         #expect(tree.snapshot() == ["a/", "d/"])
     }
 
-    @Test(arguments: ["frequent", "locations"])
-    func aSidebarFolderDraggedAmongTheFavoritesJoinsThem(from sourceSection: String) async throws {
+    @Test(arguments: ["frequent", "locations"], [false, true])
+    func aSidebarFolderDraggedAmongTheFavoritesJoinsThem(from sourceSection: String, hidesRecents: Bool) async throws {
         let tree = try TestTree("a/", "b/", "often/")
         let folder = tree.url("often").lexicallyStandardized
         let environment = try PreviewEnvironment(tree, cloudFolders: { [CloudFolder(url: folder, title: "often")] })
         defer { withExtendedLifetime(environment) {} }
         let services = environment.services, preferences = services.preferences
         preferences.favoritePaths = ["a", "b"].map { tree.url($0).path }
+        preferences.sidebarHidesRecents = hidesRecents
         services.visits.record(tree.url("often"))
         let sidebar = SidebarViewController(services: services)
         _ = sidebar.view
@@ -102,9 +117,10 @@ import Testing
                                            proposedChildIndex: NSOutlineViewDropOnItemIndex) == [])
             }
         }
-        // Between a and b: Recents is row 0, so child 2 is before b.
-        #expect(sidebar.outlineView(outline, validateDrop: drag, proposedItem: favorites, proposedChildIndex: 2) == .move)
-        #expect(sidebar.outlineView(outline, acceptDrop: drag, item: favorites, childIndex: 2))
+        // Between a and b, accounting for the optional Recents row.
+        let betweenFolders = hidesRecents ? 1 : 2
+        #expect(sidebar.outlineView(outline, validateDrop: drag, proposedItem: favorites, proposedChildIndex: betweenFolders) == .move)
+        #expect(sidebar.outlineView(outline, acceptDrop: drag, item: favorites, childIndex: betweenFolders))
         for _ in 0..<200 where preferences.favoritePaths?.count != 3 { try await Task.sleep(for: .milliseconds(10)) }
         #expect(preferences.favoritePaths?.map { URL(filePath: $0).lastPathComponent } == ["a", "often", "b"])
         sidebar.reload()

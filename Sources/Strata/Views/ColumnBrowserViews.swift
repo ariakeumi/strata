@@ -160,11 +160,11 @@ final class ColumnCellView: NSTableCellView, ColorThemeUpdating {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    func configure(_ entry: FileEntry, matches: [Int], dimmed: Bool, git: GitBadge? = nil, tags: [FinderTag] = [],
+    func configure(_ entry: FileEntry, matches: [Int], dimmed: Bool, tags: [FinderTag] = [],
                    cloud: CloudStatus? = nil, scale: CGFloat = 2, preferences: Prefs, typography: FileViewTypography,
                    thumbnails: FileThumbnails) {
         isFolder = entry.isFolder
-        nameCell.configure(name: entry.displayName, icon: thumbnails.icon(for: entry), matches: matches, dimmed: dimmed, git: git,
+        nameCell.configure(name: entry.displayName, icon: thumbnails.icon(for: entry), matches: matches, dimmed: dimmed,
                            tags: tags, cloud: cloud, thumbnail: preferences.showIconPreviews ? entry : nil,
                            thumbnails: thumbnails, scale: scale, typography: typography)
         applyTruncation()

@@ -61,7 +61,7 @@ struct BrowserContextMenuTests {
         BrowserContextMenu.Facts(
             selection: selection, showsHiddenFiles: false, isOnServer: false, serverHasShell: false, isInsideArchive: false,
             isInContainerCopy: false, isShowingTrash: false, clipboardHasFiles: false, canTag: false, renameTitle: "Rename",
-            compressTitle: "Compress", extractTitle: "Extract", appUpdatesTitle: "", hasArchives: false, hasApps: false,
+            compressTitle: "Compress", extractTitle: "Extract", hasArchives: false,
             containers: [], canDownload: false, canRemoveDownload: false, opensAsFolder: false, folderIsStack: false,
             folderIsEngine: false, folderIsArchiveCopy: false, selectionIsStacks: false, hasStackProjects: false, appliedTags: { [:] })
     }

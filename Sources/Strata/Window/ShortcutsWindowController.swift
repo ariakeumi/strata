@@ -2,11 +2,10 @@ import AppKit
 
 /// ⌘/ and the sidebar's footer button: every shortcut, grouped and searchable.
 final class ShortcutsWindowController: NSWindowController, NSSearchFieldDelegate {
-    static let shared = ShortcutsWindowController()
-
     private struct Shortcut {
         let keys: [String]
         let action: String.LocalizationValue
+        var actionWhenReturnRenames: String.LocalizationValue? = nil
     }
 
     private static let sections: [(title: String, items: [Shortcut])] = [
@@ -25,7 +24,9 @@ final class ShortcutsWindowController: NSWindowController, NSSearchFieldDelegate
             Shortcut(keys: ["⌥", "⌘", "L"], action: "Downloads"),
             Shortcut(keys: ["⇧", "⌘", "A"], action: "Applications"),
             Shortcut(keys: ["⌥", "⌘", "K"], action: "Connect to a server (SMB, AFP, NFS, WebDAV)"),
-        ]),
+        ] + StrataCommand.sidebarFolders.map { command in
+            Shortcut(keys: ["⌘", command.key], action: StrataCommand.sidebarFolderTitle(command.tag))
+        }),
         (String(localized: "Find", comment: "Keyboard shortcuts section: filtering and searching"), [
             Shortcut(keys: ["a–z"], action: "Type in the list to filter this folder (fuzzy)"),
             Shortcut(keys: ["↩"], action: "While filtering: open the top match"),
@@ -45,9 +46,10 @@ final class ShortcutsWindowController: NSWindowController, NSSearchFieldDelegate
             Shortcut(keys: ["author:ana"], action: "Document author; artist: for music (via Spotlight)"),
         ]),
         (String(localized: "Files", comment: "Keyboard shortcuts section: working with files"), [
-            Shortcut(keys: ["↩"], action: "Rename (or open — see Settings)"),
-            Shortcut(keys: ["space"], action: "Quick Look (also ⌘Y)"),
+            Shortcut(keys: ["↩"], action: "Open", actionWhenReturnRenames: "Rename"),
             Shortcut(keys: ["⌘", "O"], action: "Open"),
+            Shortcut(keys: ["⌘", "↩"], action: "Rename"),
+            Shortcut(keys: ["space"], action: "Quick Look (also ⌘Y)"),
             Shortcut(keys: ["⇧", "⌘", "N"], action: "New folder"),
             Shortcut(keys: ["⌥", "⌘", "N"], action: "New file (empty; its extension is in Settings)"),
             Shortcut(keys: ["⌘", "D"], action: "Duplicate"),
@@ -58,7 +60,7 @@ final class ShortcutsWindowController: NSWindowController, NSSearchFieldDelegate
             Shortcut(keys: ["⌘", "X"], action: "Cut (the next paste moves)"),
             Shortcut(keys: ["⌘", "V"], action: "Paste"),
             Shortcut(keys: ["⌥", "⌘", "V"], action: "Move copied items here"),
-            Shortcut(keys: ["⌥", "⌘", "C"], action: "Copy path"),
+            Shortcut(keys: ["⇧", "⌘", "C"], action: "Copy path"),
             Shortcut(keys: ["⌘", "Z"], action: "Undo"),
             Shortcut(keys: ["⇧", "⌘", "Z"], action: "Redo"),
             Shortcut(keys: ["⌥", "⌘", "Z"], action: "History: undo past operations, even after quitting"),
@@ -68,11 +70,11 @@ final class ShortcutsWindowController: NSWindowController, NSSearchFieldDelegate
             Shortcut(keys: ["⌥", "drag"], action: "Copy instead of move"),
         ]),
         (String(localized: "View", comment: "Keyboard shortcuts section: how the list looks"), [
-            Shortcut(keys: ["⌘", "1"], action: "Icons"),
-            Shortcut(keys: ["⌘", "2"], action: "List"),
-            Shortcut(keys: ["⌘", "3"], action: "Columns"),
-            Shortcut(keys: ["⌘", "4"], action: "Gallery"),
-            Shortcut(keys: ["⌘", "5"], action: "Disk usage"),
+            Shortcut(keys: ["⌃", "⌘", "1"], action: "Icons"),
+            Shortcut(keys: ["⌃", "⌘", "2"], action: "List"),
+            Shortcut(keys: ["⌃", "⌘", "3"], action: "Columns"),
+            Shortcut(keys: ["⌃", "⌘", "4"], action: "Gallery"),
+            Shortcut(keys: ["⌃", "⌘", "5"], action: "Disk usage"),
             Shortcut(keys: ["⌘", "+"], action: "Bigger icons"),
             Shortcut(keys: ["⌘", "−"], action: "Smaller icons"),
             Shortcut(keys: ["⌃", "⌥", "⌘", "1"], action: "Sort by name (2 kind, 5 date modified, 7 size)"),
@@ -99,8 +101,10 @@ final class ShortcutsWindowController: NSWindowController, NSSearchFieldDelegate
 
     private let search = NSSearchField()
     private let content = NSStackView()
+    private let preferences: Prefs
 
-    init(restoresFrame: Bool = true) {
+    init(preferences: Prefs, restoresFrame: Bool = true) {
+        self.preferences = preferences
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 640),
                             styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
                             backing: .buffered, defer: true)
@@ -173,6 +177,7 @@ final class ShortcutsWindowController: NSWindowController, NSSearchFieldDelegate
     }
 
     func show() {
+        rebuild(filter: search.stringValue)
         if window?.isVisible != true { window?.center() }
         showWindow(nil)
         window?.makeFirstResponder(search)
@@ -185,8 +190,12 @@ final class ShortcutsWindowController: NSWindowController, NSSearchFieldDelegate
     private func rebuild(filter: String) {
         content.arrangedSubviews.forEach { $0.removeFromSuperview() }
         let query = filter.trimmingCharacters(in: .whitespaces).lowercased()
+        let returnOpens = preferences.returnOpens
         for section in Self.sections {
-            let all = section.items.map { (keys: $0.keys, action: String(localized: $0.action)) }
+            let all = section.items.map { shortcut in
+                let action = returnOpens ? shortcut.action : (shortcut.actionWhenReturnRenames ?? shortcut.action)
+                return (keys: shortcut.keys, action: String(localized: action))
+            }
             let items = query.isEmpty ? all : all.filter {
                 $0.action.lowercased().contains(query) || $0.keys.joined(separator: " ").lowercased().contains(query)
                     || section.title.lowercased().contains(query)
@@ -277,27 +286,4 @@ private final class Keycap: NSView {
     }
 
     override var wantsUpdateLayer: Bool { true }
-}
-
-/// The sidebar's footer: a quiet button that opens the shortcuts list.
-final class SidebarFooterController: NSSplitViewItemAccessoryViewController {
-    override func loadView() {
-        let button = NSButton(title: String(localized: "Keyboard Shortcuts"), image: NSImage(systemSymbolName: "command", accessibilityDescription: nil) ?? NSImage(),
-                              target: nil, action: #selector(AppDelegate.showShortcuts(_:)))
-        button.bezelStyle = .accessoryBarAction
-        button.isBordered = false
-        button.imagePosition = .imageLeading
-        button.contentTintColor = .secondaryLabelColor
-        button.font = .systemFont(ofSize: 12)
-        button.toolTip = String(localized: "Every shortcut in Strata (⌘/)")
-        button.translatesAutoresizingMaskIntoConstraints = false
-        let container = ThemeAccessoryView(role: .sidebar)
-        container.addSubview(button)
-        NSLayoutConstraint.activate([
-            container.heightAnchor.constraint(equalToConstant: 36),
-            button.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 14),
-            button.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-        ])
-        view = container
-    }
 }

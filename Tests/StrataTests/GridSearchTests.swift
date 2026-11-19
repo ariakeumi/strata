@@ -1,39 +1,10 @@
 import AppKit
-import SQLite3
 import Testing
 @testable import Strata
 @testable import StrataModel
 @testable import StrataPreviews
 
 @MainActor struct GridSearchTests {
-    @Test(.archiveWorkerApp) func previewFindControlsUseTheLoadedCSVAndSQLitePage() async throws {
-        let tree = try TestTree("table.csv")
-        try Data("name,note\nfirst,other\nsecond,café\n".utf8).write(to: tree.url("table.csv"))
-        try await database(tree.url("table.db"))
-        let environment = try PreviewEnvironment(tree)
-        let before = tree.snapshot()
-        defer { environment.services.previews.close() }
-        let browser = BrowserViewController(services: environment.services)
-        for name in ["table.csv", "table.db"] {
-            let entry = try #require(FileEntry(url: tree.url(name)))
-            environment.services.previews.show(entry, from: browser, present: false)
-            let content = try #require(environment.services.previews.content)
-            await content.session.task?.value
-            let rich = try #require(content.fileView.subviews.compactMap { $0 as? PreviewView }.first)
-            await rich.loadingTask?.value
-            let grid = try #require(content.fileView.documentSearch as? GridView)
-            #expect(content.controls.search.isEnabled)
-            #expect(content.controls.search.placeholderString == PreviewSearchScope.page.label)
-            #expect(content.controls.search.toolTip == PreviewSearchScope.page.hint)
-            content.filter("cafe")
-            await grid.findTask?.value
-            #expect(grid.tableView.selectedRowIndexes == [1] && grid.tableView.selectedColumns == [1])
-            environment.services.previews.close()
-        }
-        #expect(tree.snapshot() == before)
-        withExtendedLifetime(environment) {}
-    }
-
     @Test func matchingUsesFullLoadedCellsDisplayedColumnsAndCurrentRowOrder() async throws {
         let finder = GridFinder()
         let data = GridData(columns: [GridColumn(title: "a"), GridColumn(title: "b")], rows: [
@@ -156,13 +127,6 @@ import Testing
         #expect(grid.tableView.selectedRowIndexes.isEmpty)
         search.find("later", in: data, order: [0])
         #expect(search.task == nil)
-    }
-
-    @concurrent private func database(_ url: URL) async throws {
-        var db: OpaquePointer?
-        try #require(sqlite3_open(url.path, &db) == SQLITE_OK)
-        defer { sqlite3_close(db) }
-        try #require(sqlite3_exec(db, "CREATE TABLE items(name,note); INSERT INTO items VALUES ('first','other'),('second','café')", nil, nil, nil) == SQLITE_OK)
     }
 }
 

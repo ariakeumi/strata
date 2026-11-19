@@ -11,18 +11,17 @@ files: a bug that deletes, trashes, moves or overwrites the wrong thing is the w
   sheet), `Transfers` (the copy engine, archives), `Queue` (the transfer queue, its jobs and journal, the file command
   owner), `Model` (FileOps, Trash, History in `OperationLog`, SecureStorage), `AI` (Ask Strata plans), `Remote` (server
   copies and sessions), `Connections` (SFTP, the Docker engine API, tar, server definitions and credentials),
-  `Containers`, `Dev` (git, project cleanup), `Inspector`, `Toolbar` (path bar, suggestions), `Palette` (command
-  palette), `Previews` (file previews), `Previewing` (Space previews of folders and archives), `Index`, `Sidebar`,
-  `Settings`, `Dock`, `AppUpdates`, `App`, `Support`. `Package.swift` compiles the lower layers as library targets
-  (`StrataSupport`, `StrataTheme`, `StrataModel`, `StrataArchives`, `StrataPreviews`, `StrataIndex`, `StrataConnections`, `StrataFiles`
+  `Containers`, `Dev` (project detection and terminal commands), `Inspector`, `Toolbar` (path bar, suggestions), `Palette` (command
+  palette), `Previews` (file previews), `Search`, `Sidebar`,
+  `Settings`, `Dock`, `App`, `Support`. `Package.swift` compiles the lower layers as library targets
+  (`StrataSupport`, `StrataTheme`, `StrataModel`, `StrataArchives`, `StrataPreviews`, `StrataConnections`, `StrataFiles`
   for the rest of `Model`, `Transfers`, `Remote` and `Containers`, `StrataQueue`, then `StrataAI`, `StrataDev` and
-  `StrataSearch` for the rest of `Index`) imported by `Strata`, the interface, so the compiler enforces module
-  boundaries and `IndexStore`'s private storage. What the app uses from a library is `package`.
+  `StrataSearch` for `Search`) imported by `Strata`, the interface, so the compiler enforces module
+  boundaries. What the app uses from a library is `package`.
 - `Sources/Strata/Archives/` — archive reading and process infrastructure, shared by transfers and previews.
 - `Sources/CPreviewText/` — the native exception boundary for Markdown and source text previews.
 - `Sources/CPreviewWeb/` — the native exception boundary and terminal-state ownership for WebKit resource callbacks.
 - `Sources/CNativeReaders/` — guarded native document extraction, image metadata, decoding and preview encoding.
-- `Sources/CNativeDrawing/` — guarded badge text rendering; a complete glyph image lands before a view paints it.
 - `Sources/CArchivePreview/`, `Sources/StrataArchiveService/` and `Sources/StrataArchiveWorker/` — the C archive parser,
   the archive service (an XPC service in the app) and the worker it starts for each read; `Sources/CArchiveSandbox/`
   holds what the service and workers share (statuses, the sandbox check), so the service never links the parser;
@@ -33,8 +32,8 @@ files: a bug that deletes, trashes, moves or overwrites the wrong thing is the w
   clocks, readers and volumes the principles below ask for (`TestClock`, `ControlledDirectoryReads`, `TestWork`,
   `ScratchVolume`).
 - `Localization/*.json` — one file per language; `en.json` is generated from the code.
-- `docs/` — guides (themes, website, README translation, destructive actions); `docs/release-notes/<version>.md` is
-  shown on GitHub and in the update window.
+- `docs/` — guides (website, README translation, destructive actions); `docs/release-notes/<version>.md` is
+  shown on GitHub.
 - `site/` — the website.
 - `scripts/` — build, localization, audit and release tooling.
 
@@ -47,7 +46,7 @@ python3 scripts/localize.py extract     # after editing Swift files: regenerates
 python3 scripts/localize.py check --all --complete  # every supported language must be complete
 python3 scripts/audit-theme-colors.py    # no unreviewed surface colors or unthemed Inspector gray text
 python3 scripts/audit-main-thread.py     # no unreviewed blocking calls on the main thread
-python3 scripts/audit-app-wide.py        # no unreviewed app-wide instance outside App, Settings, Dock, AppUpdates
+python3 scripts/audit-app-wide.py        # no unreviewed app-wide instance outside App, Settings, Dock
 python3 scripts/audit-destructive.py --check  # the map names every flagged function; mutations.json fits the code
 python3 -m unittest discover -s Tests -p 'test_*.py'  # checkers and generated resources
 ```
@@ -66,7 +65,7 @@ python3 -m unittest discover -s Tests -p 'test_*.py'  # checkers and generated r
 - Adding or changing text means updating every `Localization/<language>.json` in the same commit: extraction updates
   only English. Reuse translations supplied by users. `check --all --complete` fails on missing keys, blank text
   (including whitespace) and missing plural forms. Text identical to English is fine when intentional (Strata, Finder,
-  Git, shortcuts).
+  shortcuts).
 - `swift test` runs the same completeness check (`LocalizationTests`).
 
 ### CI and release gates
@@ -154,7 +153,7 @@ test guards its rule: break the rule once, watch the test fail, restore it.
   record whose Undo has started, whose action has been replayed, or which History has cleared. History buttons
   resolve the current saved entry ID before acting, since a captured row can predate a retry.
 - File commands use `BrowserServices.files` (`FileCommands`), which keeps the transfer queue's History, preferences and
-  providers. New File, New Folder, Rename, Trash, project cleanup and Ask Strata keep that owner through native
+  providers. New File, New Folder, Rename, Trash and Ask Strata keep that owner through native
   Undo/Redo and sheets. Capture creation identities before History notifications can replace an item.
   `BrowserRename.decision` is separate from its native confirmation; commits recheck navigation and item identity.
 - History panels receive their store and native Undo manager from the application owner, observe only that store, and
@@ -172,7 +171,7 @@ These apply everywhere below; the sections that follow add only what is specific
   owner even when environments share a notification center. Pass the owner's instance as an argument nobody can leave
   out, and keep what a view or job needs from when it's made rather than reading it through a weak owner. A
   parameter or property defaulting to `.shared` or `.live`, a fallback like `owner?.copies ?? .live`, and, outside
-  the application's own code (App, Settings, Dock, AppUpdates, `main.swift`), any use of an app-wide instance such as
+  the application's own code (App, Settings, Dock, `main.swift`), any use of an app-wide instance such as
   `TagStore.shared` fail `scripts/audit-app-wide.py` unless `Tests/app-wide.json` lists it with a reviewed reason. So
   does observing with `object: nil` a notification its owner posts (`object: self`): name the window's, as panes
   observe `.tagsLoaded` from `services.tags`. The audit sees an app-wide instance by its name, so name each one
@@ -190,7 +189,7 @@ These apply everywhere below; the sections that follow add only what is specific
   folder, a selection or History. On a server or a sleeping disk each of these takes seconds, and the window freezes.
   Read in a `@concurrent` function, an actor, a job's worker, or `OwnThread.run` for reads that may hang on a
   server that stopped answering; recheck ownership after the suspension, then apply on the main actor. Lists show what
-  was last read and update when a read arrives (`PlaceChecks`, `TagStore.tags`, `GitStatusStore.repository`,
+  was last read and update when a read arrives (`PlaceChecks`, `TagStore.tags`,
   `InfoEditor.Facts`); a hidden view reads nothing. A change you ask for on one item may stay synchronous, as may an
   undo step that must register its redo inside the `UndoManager` callback. `scripts/audit-main-thread.py` lists
   blocking calls in main-actor code, and calls there to synchronous `nonisolated` functions and initializers that
@@ -211,8 +210,7 @@ These apply everywhere below; the sections that follow add only what is specific
   custom composition explicitly with `configured`, whose queue supplies preferences, History and copy routing. Never
   mutate a supplied queue when constructing a window; copy routing is immutable.
 - `BrowserServices` owns its `Clipboard`, `CopyProviders` (`remoteCopies`, `containerCopies` and `clipboardRoot`),
-  `ContainerFiles`, `ContainerStore`, `FileIndex` and the stores file views read (`TagStore`, `CloudStore` and
-  `GitStatusStore`, handed to Icons, Columns and Gallery together as `statuses`), and passes them to `TransferQueue`,
+  `ContainerFiles`, `ContainerStore` and the stores file views read (`TagStore` and `CloudStore`, handed to Icons, Columns and Gallery together as `statuses`), and passes them to `TransferQueue`,
   `TransferJob`, `RemoteUploadJob`, `BrowserViewController` (server and container commands, deletion plans, clipboard
   staging, `Copy Path`, archive checks, drag and drop), `InspectorViewController`, `PathBar` and every presentation
   (`FileOutlineView`, Icons, Columns, Gallery, Disk Usage, Sidebar).
@@ -227,8 +225,8 @@ These apply everywhere below; the sections that follow add only what is specific
   `CloudStore.foldersShown` is set by `main.swift`, move a type down, as `Fuzzy` and `ShellQuote` live in `Support`
   and settings' values in `Model/ViewSettings.swift`, or move interface code up, as the Inspector's cards live in
   `Inspector`. Archive readers, sources, stream validation and worker allowances live in `StrataArchives`;
-  `StrataFiles` and `StrataQueue` depend on it without importing preview UI or themes. Theme preferences belong to the
-  interface in `Settings/ThemePreferences.swift`. The Python module-boundary check also rejects transitive interface
+  `StrataFiles` and `StrataQueue` depend on it without importing preview UI or themes. Appearance settings belong to the
+  interface in `Settings/AppearanceSettings.swift`. The Python module-boundary check also rejects transitive interface
   dependencies from the core libraries. `FileThumbnails` and `ItemInfoLoader` resolve container and Compose stack icon marks and status text
   from their injected `CopyProviders` and `ContainerStore`; `FileDrop` and `ShelfWell` use their injected or active
   window's `CopyProviders`; `PathSuggestions` reads `showHidden` from its injected `Prefs`.
@@ -315,8 +313,7 @@ These apply everywhere below; the sections that follow add only what is specific
   `BrowserViewController.navigationRevision`. Navigating away (even back to the same folder), entering a deeper column,
   showing results or messages, or closing the pane cancels its `PaneFetches` action and drops stale completions; deferred Quick
   Look also checks window visibility and selection membership. Closing a pane (`stopBackgroundWork()`) stops active and
-  cached presentation work in `ColumnBrowserViewController` and `GalleryViewController`, directory watchers, git
-  observation and deferred resort work.
+  cached presentation work in `ColumnBrowserViewController` and `GalleryViewController`, directory watchers and deferred resort work.
 - **Server and container navigation** belongs to the pane's `FolderOpenSession`: replacing its request, navigating
   (including deeper Columns) or closing the pane or window cancels it. Native Cancel buttons target their captured
   request.
@@ -404,68 +401,12 @@ Strata browses servers and containers through local copies whose files are place
 - Tests use independent pools with controlled backends and fake credentials: cancelled attempts, late failures and
   timeouts, dropped connections, both orders of late completion, and identical server IDs in independent pools.
 
-### Index storage
+### Folder search
 
-Index columns belong to `IndexStore.Storage`: borrow them inside `read`, mutate them inside `write`, and keep related
-column changes in one write scope. Never reenter the same store's lock from a scope. Returning a column creates a
-copy-on-write snapshot, so avoid that in hot paths. Raw column pointers stay inside `withColumns`, with parallel
-searches joined before the scope ends. Keep the compact-storage and buffer-growth tests. UI metadata reads must
-never wait on that lock: use `tryRead` with the last value or an unknown result, or acquire it off the main actor.
-Searches propagate cancellation into their workers, bound workers and retained candidates, and count matches without
-retaining all of them. A leading dot includes hidden names, not every cache and build folder; name those folders or
-scope a search into them to include their contents.
-
-The index reads only what is on this Mac's own disk. A volume mounted inside its roots (`IndexMountedVolumes`, the
-system's mount table) is left out like an excluded folder, by the scan and by the file events that arrive from it.
-Only the worker reads that table, before it reads anything, and says which volumes it leaves out; `FileIndex` takes
-its word and reads the table itself only for a search with the index off, when no worker has looked.
-Every folder and item the index reads goes through `IndexFolderReads`, on threads that never fetch what is only in
-the cloud: such a folder fails at once (`EDEADLK`) and stays unread until it is on the Mac. It also gives up on a
-read that gets nowhere, so one folder that stopped answering holds a scan or a refresh for its patience and no
-longer (a root, and any folder past thirty-two that do not answer, is waited for as before), the index's switch
-for half a second and quitting for about one. A folder given up is a folder whose read failed: never treat one (`ETIMEDOUT`) as
-gone or empty. A folder the index holds unread has no total: views show none and start no walk until asked, and a
-folder never read is read whole at its first change. `FolderSizer` keeps the same line: a walk a list starts for
-its rows fetches nothing, and one you asked for (`askedBy:`, the Inspector and Disk Usage) fetches, is never stopped
-by the index, ends when whoever asked shows the folder no more, and stands while the index's total is incomplete
-(`FolderSizer.shown` decides, for a row and for a sort alike). Whether a row's folder is only in the cloud is
-`CloudStore`'s to say, for its size as for its badge: keep no second copy of that. Read no
-folder or item for the index on the worker's own thread or a scanner's; a read left behind keeps its thread, so what
-it captures must stay small and nothing may wait for it. Tests move the reader's own clock (`readClock`), and only
-while the read meant is the only one under way; a test's read that waits gets a thread of its own, never one of
-Dispatch's shared pool, which every suite draws on, and its waits are bounded by turns, not by the clock.
-
-Content search cancels embedding batches when their caller leaves, skips the remaining texts after a native model call
-returns, and checks cancellation before storing passages or publishing matches. Native embedding models are accessed
-only on their embedder's serial queue; snippet scoring uses that queue too. Keep injected calculation tests that hold
-a native call while cancelling and replacing its caller, without loading a live language model.
-
-## Appearance and theming
-
-- UI backgrounds and borders use `ThemeStyle`; `swift test` and CI run the color audit.
-  `python3 scripts/audit-theme-colors.py --list` inventories direct colors. Only deliberate native defaults, semantic
-  artwork and document colors belong in `Tests/theme-colors.json`, each with an exact use count and a reviewed reason;
-  missing or stale exceptions fail. Never add an exception to silence an unthemed surface. The audit cannot see
-  AppKit's implicit gray materials, so keep headless rendered and layout coverage for complete windows and views.
-- AppKit stays in charge of toolbar controls, panel corners, material masks and focus. Color owned canvases beneath
-  native chrome and use glass's public tint; never paint overlays inside native visual-effect materials. Check the
-  full native accessory padding, not just the smaller label container. Keep the native scroll-edge preference when
-  clipping the file viewport already keeps content out of the toolbar.
-- Inspector text uses `InspectorColors`, including cached attributed strings in Git, Scripts and container cards. Keep
-  at least 4.5:1 rendered contrast against every light and dark panel palette, and native colors for System and
-  Increase Contrast. Recolor existing cards without rebuilding them or changing selections.
-- `NativeHeaderFillTint` is a guarded compatibility adapter, not a public AppKit tint API. It supports only the
-  active and inactive titlebar layer structures seen on macOS 26: match structure, not the OS version, since later
-  versions can keep it. Unknown structures or non-neutral fills keep native drawing. Never change blur, opacity,
-  masks, filters or controls to force a match. Keep native-layer tests for changed structures and check new macOS
-  releases visually. `ToolbarBackdropTint.prepare` recognizes known header sections at the titlebar edge and keeps
-  their original colors across the window/full-screen move; never extend this lookup into arbitrary content.
-- An unshown window cannot verify AppKit's live full-screen compositor. Report headless layout and drawing checks
-  separately from visual confirmation in a focused, unfocused or full-screen window; an empty bitmap or a borderless
-  fixture is no proof of the real full-screen appearance.
-- Contributed color themes are JSON files; see `docs/themes.md`.
-
-## Writing tests
+Each search belongs to one pane and one folder, including the focused folder in Columns. Walk the folder on an
+owned thread, retain only the best matches, and cancel work when the query or navigation changes. A path filter
+can narrow that tree. Skip unopened protected descendants and avoid fetching cloud placeholders. Finder tags and
+other metadata use Spotlight scoped to the same folder.
 
 ### Fixtures
 
@@ -510,11 +451,6 @@ a native call while cancelling and replacing its caller, without loading a live 
   headless environments leave empty, never with `makeKeyAndOrderFront` in code a test reaches.
 - Strata's sounds stay silent until `main.swift` turns them on, so tests that refuse or trash things play none: play
   them through `Sounds`, never `NSSound`, `NSBeep` or `AudioServicesPlay…` (a Python check enforces this).
-- Your own color themes (`~/Library/Application Support/Strata/Themes/`) are read only once `main.swift` opts in
-  (`UserThemes.shared.useApplicationFolder()`): the theme suites check the bundled catalog, never what a developer
-  keeps there. Test the folder's reading with a `TestTree` folder (`ThemeCatalog.read(folder:)`, `accepted`), and
-  what is known of it when with a `UserThemes` of your own and a `ThemeFolderInMemory` reader. A folder or a theme
-  file that could not be read says nothing: never take one for gone.
 - Never use `NSPasteboard.general` or Strata's own preferences. Inject
   `Clipboard(pasteboard: .withUniqueName(), notifications: NotificationCenter())` into the services, as
   `IndependentEnvironment` does.
@@ -577,7 +513,7 @@ a native call while cancelling and replacing its caller, without loading a live 
   coverage. `CArchiveSandbox`, `CArchivePreview`, `StrataArchiveService` and `StrataArchiveWorker` are C targets:
   exercise their real parser callbacks under Address and Undefined Behavior Sanitizer when changing them.
 - Archives are read only through the archive service's workers (docs/archive-sandbox.md): the preview pane's listing,
-  Space previews, copies out, the check before Extract and Extract itself. The service is an XPC service with an App
+  format-specific previews, the check before Extract and Extract itself. The service is an XPC service with an App
   Sandbox of its own, the way Apple documents to give part of an app a sandbox of its own (helpers started with
   `Process` or `posix_spawn` can't get one, and `sandbox_init` is deprecated). It never reads an archive: it starts one
   worker per read (Contents/Helpers, signed to inherit its sandbox), passing the request with its password, the archive
@@ -681,5 +617,5 @@ mode, sidebar mode, last location).
 ## Hunting bugs
 
 When a report gives steps, list every place they could run before saying it doesn't reproduce: each view (List, Icons,
-Columns and its deeper columns, Gallery, Disk Usage), search results, Recents and Duplicates, both panes, both sidebar
+Columns and its deeper columns, Gallery, Disk Usage), search results, Recents, both panes, both sidebar
 modes, and the shape of the selection. A bug can live in just one of them, such as deleting from a deeper column.

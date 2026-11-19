@@ -116,7 +116,6 @@ extension BrowserWindowController: BrowserViewControllerDelegate {
         updateHeaders()
         guard owner === pane else { return }
         pathBar.url = url
-        updateGitChrome(on: pathBar, destination: owner.destination, location: url)
         window?.title = Places.displayName(url, copies: services.copies, names: services.folderNames)
         refreshPanels()
     }

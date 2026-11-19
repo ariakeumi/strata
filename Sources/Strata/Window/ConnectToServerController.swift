@@ -11,6 +11,7 @@ final class ConnectToServerController: NSViewController, NSComboBoxDelegate, NSC
     var onConnected: ((URL) -> Void)?
     /// Called with an SFTP server or bucket once it's connected and saved.
     var onServer: ((RemoteServer) -> Void)?
+    var onManageSMB: (() -> Void)?
 
     /// Editing a saved server: its form, filled in; the kind can't change.
     private let editing: RemoteServer?
@@ -20,6 +21,7 @@ final class ConnectToServerController: NSViewController, NSComboBoxDelegate, NSC
     private let address = NSComboBox()
     private let hint = NSTextField(wrappingLabelWithString: "")
     private let clearRecents = NSButton(title: String(localized: "Clear Recents", comment: "Button: forget the recently used server addresses"), target: nil, action: nil)
+    private let manageSMB = NSButton(title: String(localized: "SMB Connections…"), target: nil, action: nil)
     private let s3Form = NSGridView()
     private let s3Name = NSTextField()
     private let s3Bucket = NSTextField()
@@ -72,7 +74,7 @@ final class ConnectToServerController: NSViewController, NSComboBoxDelegate, NSC
         buildS3Form()
         let footer = footer()
 
-        let stack = NSStackView(views: [title, kindPicker, address, s3Form, hint, message, footer])
+        let stack = NSStackView(views: [title, kindPicker, address, s3Form, hint, manageSMB, message, footer])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
@@ -107,6 +109,9 @@ final class ConnectToServerController: NSViewController, NSComboBoxDelegate, NSC
         address.numberOfVisibleItems = 10
         address.delegate = self
         address.setAccessibilityLabel(String(localized: "Server address"))
+        manageSMB.bezelStyle = .accessoryBarAction
+        manageSMB.target = self
+        manageSMB.action = #selector(openSMBSettings(_:))
     }
 
     /// The message line's style, then Clear Recents, the spinner, Cancel and Connect (Save while editing).
@@ -200,6 +205,7 @@ final class ConnectToServerController: NSViewController, NSComboBoxDelegate, NSC
     private func showKind() {
         address.isHidden = kind == .s3
         s3Form.isHidden = kind != .s3
+        manageSMB.isHidden = kind != .share || onManageSMB == nil
         address.removeAllItems()
         switch kind {
         case .share:
@@ -384,11 +390,18 @@ final class ConnectToServerController: NSViewController, NSComboBoxDelegate, NSC
         sender.isHidden = true
     }
 
+    @objc private func openSMBSettings(_ sender: NSButton) {
+        guard !mounts.isConnecting, let onManageSMB else { return }
+        dismiss(nil)
+        onManageSMB()
+    }
+
     private func setBusy(_ busy: Bool) {
         busy ? spinner.startAnimation(nil) : spinner.stopAnimation(nil)
         connectButton.isEnabled = !busy
         address.isEnabled = !busy
         kindPicker.isEnabled = !busy
+        manageSMB.isEnabled = !busy
         for field in [s3Name, s3Bucket, s3Region, s3Endpoint, s3KeyID, s3Secret] { field.isEnabled = !busy }
         if busy { message.isHidden = true }
     }

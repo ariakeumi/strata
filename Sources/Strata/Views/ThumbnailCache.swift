@@ -4,13 +4,15 @@ import AppKit
 final class ThumbnailCache {
     private final class Entry {
         let key: String
+        let path: String?
         let image: NSImage
         let cost: Int
         weak var previous: Entry?
         var next: Entry?
 
-        init(key: String, image: NSImage, cost: Int) {
+        init(key: String, path: String?, image: NSImage, cost: Int) {
             self.key = key
+            self.path = path
             self.image = image
             self.cost = cost
         }
@@ -19,6 +21,7 @@ final class ThumbnailCache {
     private let costLimit: Int
     private let countLimit: Int
     private var entries: [String: Entry] = [:]
+    private(set) var keysByPath: [String: Set<String>] = [:]
     private var first: Entry?
     private var last: Entry?
     private var cost = 0
@@ -47,14 +50,15 @@ final class ThumbnailCache {
         return entry.image
     }
 
-    func insert(_ image: NSImage, forKey key: String, cost: Int) {
+    func insert(_ image: NSImage, forKey key: String, cost: Int, path: String? = nil) {
         if let old = entries[key] { discard(old) }
         let cost = max(0, cost)
         // An image can still be shown by its caller when it is too large to keep in the shared cache.
         guard cost <= costLimit else { return }
         while let oldest = first, self.cost > costLimit - cost || entries.count >= countLimit { discard(oldest) }
-        let entry = Entry(key: key, image: image, cost: cost)
+        let entry = Entry(key: key, path: path, image: image, cost: cost)
         entries[key] = entry
+        if let path { keysByPath[path, default: []].insert(key) }
         self.cost += cost
         append(entry)
     }
@@ -65,6 +69,11 @@ final class ThumbnailCache {
 
     func remove(forKey key: String) {
         if let entry = entries[key] { discard(entry) }
+    }
+
+    func removeImages(forPath path: String) {
+        guard let keys = keysByPath.removeValue(forKey: path) else { return }
+        for key in keys { remove(forKey: key) }
     }
 
     private func append(_ entry: Entry) {
@@ -84,6 +93,10 @@ final class ThumbnailCache {
     private func discard(_ entry: Entry) {
         detach(entry)
         entries.removeValue(forKey: entry.key)
+        if let path = entry.path {
+            keysByPath[path]?.remove(entry.key)
+            if keysByPath[path]?.isEmpty == true { keysByPath[path] = nil }
+        }
         cost -= entry.cost
     }
 }

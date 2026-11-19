@@ -24,14 +24,11 @@ let appOnlySources = [
     "MainThreadWatchdog.swift",
     "ShortcutStore.swift",
     "StrataCommand.swift",
-    "Updates.swift",
 ]
 
 let themeSources = [
     "Appearance.swift",
     "ColorTheme.swift",
-    "ThemeCatalog.swift",
-    "UserThemes.swift",
     "HeaderMaterialTint.swift",
     "NativeHeaderFillTint.swift",
     "NavigationItemTheme.swift",
@@ -85,7 +82,6 @@ let modelSources = [
     "MediaInfo.swift",
     "NewWindowLocation.swift",
     "PipeRead.swift",
-    "PreviewLayout.swift",
     "RemovalVolume.swift",
     "SavedNavigation.swift",
     "SavedWindowFrame.swift",
@@ -96,36 +92,9 @@ let modelSources = [
     "Workspace.swift",
 ]
 
-let indexSources = [
-    "DuplicateFinder.swift",
-    "FSEventsStream.swift",
-    "IndexChanges.swift",
-    "IndexEventInbox.swift",
-    "IndexFolderReads.swift",
-    "IndexMountedVolumes.swift",
-    "IndexHotFolders.swift",
-    "IndexLossRecovery.swift",
-    "IndexPersistence.swift",
-    "IndexQuietWait.swift",
-    "IndexRecoveryPoints.swift",
-    "IndexReconciler.swift",
-    "IndexRefresh.swift",
-    "IndexScanner.swift",
-    "IndexSearch.swift",
-    "IndexStore.swift",
-    "IndexWaitingTrees.swift",
-    "IndexWorker.swift",
-    "SpotlightSearch.swift",
-    "SearchTerms.swift",
-]
-
 let package = Package(
     name: "Strata",
     platforms: [.macOS(.v26)],
-    dependencies: [
-        // Updates (Check for Updates…, automatic checks), pinned to a release and verified by its checksum.
-        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
-    ],
     targets: [
         .target(name: "CPreviewText", cSettings: [.unsafeFlags(["-fobjc-arc", "-fobjc-arc-exceptions"])],
                 linkerSettings: [.linkedFramework("AppKit")]),
@@ -133,8 +102,6 @@ let package = Package(
                 linkerSettings: [.linkedFramework("WebKit")]),
         .target(name: "CNativeReaders", cSettings: [.unsafeFlags(["-fobjc-arc", "-fobjc-arc-exceptions"])],
                 linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("PDFKit"), .linkedFramework("ImageIO")]),
-        .target(name: "CNativeDrawing", cSettings: [.unsafeFlags(["-fobjc-arc", "-fobjc-arc-exceptions"])],
-                linkerSettings: [.linkedFramework("AppKit")]),
         .target(name: "CArchiveSandbox", linkerSettings: [.linkedFramework("CoreFoundation"), .linkedFramework("Security")]),
         .target(name: "CArchivePreview", dependencies: ["CArchiveSandbox"], linkerSettings: [.linkedLibrary("archive.2")]),
         // The archive service, an XPC service in the app sandboxed by its entitlement, and the worker it starts for each
@@ -169,7 +136,6 @@ let package = Package(
             path: "Sources/Strata/App",
             exclude: appOnlySources,
             sources: themeSources,
-            resources: [.copy("Themes")],
             swiftSettings: strataSwiftSettings
         ),
         .target(
@@ -193,14 +159,6 @@ let package = Package(
             resources: [.copy("Mermaid"), .copy("Models"), .copy("Math")],
             swiftSettings: strataSwiftSettings
         ),
-        .target(
-            name: "StrataIndex",
-            dependencies: ["StrataSupport", "StrataModel"],
-            path: "Sources/Strata/Index",
-            exclude: ["FileIndex.swift", "FolderSearch.swift", "NaturalQuery.swift", "LayerImports.swift"],
-            sources: indexSources,
-            swiftSettings: strataSwiftSettings
-        ),
         // The transfer queue and its jobs (copies, moves, uploads, archives, fetches), one disk at a time and journaled
         // for History, and the window's file command owner: above the file layer they run.
         .target(
@@ -209,8 +167,7 @@ let package = Package(
             path: "Sources/Strata/Queue",
             swiftSettings: strataSwiftSettings
         ),
-        // Ask Strata (plans, the content index, summaries), project detection and cleanup, and the app's file index and
-        // searches: above the file layer, below the interface.
+        // Ask Strata (plans and summaries), project detection and cleanup, and folder search: above the file layer, below the interface.
         .target(
             name: "StrataAI",
             dependencies: ["StrataQueue", "CNativeReaders"],
@@ -219,15 +176,14 @@ let package = Package(
         ),
         .target(
             name: "StrataDev",
-            dependencies: ["StrataQueue", "CNativeDrawing"],
+            dependencies: ["StrataQueue"],
             path: "Sources/Strata/Dev",
             swiftSettings: strataSwiftSettings
         ),
         .target(
             name: "StrataSearch",
             dependencies: ["StrataFiles", "StrataAI"],
-            path: "Sources/Strata/Index",
-            exclude: indexSources,
+            path: "Sources/Strata/Search",
             swiftSettings: strataSwiftSettings
         ),
         // Talking to servers and container engines: their definitions and credentials, SFTP, Docker's API over its
@@ -241,10 +197,10 @@ let package = Package(
         // The file layer: files, History, transfers, servers and containers. It names nothing of the interface.
         .target(
             name: "StrataFiles",
-            dependencies: ["StrataSupport", "StrataModel", "StrataArchives", "StrataIndex",
+            dependencies: ["StrataSupport", "StrataModel", "StrataArchives",
                            "StrataArchiveClient", "StrataConnections", "CNativeReaders"],
             path: "Sources/Strata",
-            exclude: ["Archives", "AI", "App", "AppUpdates", "Browser", "Connections", "Dev", "Dock", "Index", "Inspector", "main.swift",
+            exclude: ["Archives", "AI", "App", "Browser", "Connections", "Dev", "Dock", "Search", "Inspector", "main.swift",
                       "Palette", "Queue",
                       "Previewing", "Previews", "Settings", "Sidebar", "Support", "Toolbar", "Views", "Window"]
                 + modelSources.map { "Model/\($0)" },
@@ -254,13 +210,11 @@ let package = Package(
         .executableTarget(
             name: "Strata",
             dependencies: [
-                .product(name: "Sparkle", package: "Sparkle"),
                 "StrataSupport",
                 "StrataTheme",
                 "StrataModel",
                 "StrataPreviews",
                 "StrataArchives",
-                "StrataIndex",
                 "StrataFiles",
                 "StrataQueue",
                 "StrataAI",
@@ -268,12 +222,11 @@ let package = Package(
                 "StrataSearch",
             ],
             path: "Sources/Strata",
-            exclude: ["Archives", "Support", "Previews", "App/Themes", "Transfers", "Remote", "Containers", "Connections", "Queue", "AI",
-                      "Dev", "Index"]
+            exclude: ["Archives", "Support", "Previews", "Transfers", "Remote", "Containers", "Connections", "Queue", "AI",
+                      "Dev", "Search"]
                 + themeSources.map { "App/\($0)" }
                 + modelSources.map { "Model/\($0)" }
-                + appModelSources.map { "Model/\($0)" }
-                + indexSources.map { "Index/\($0)" },
+                + appModelSources.map { "Model/\($0)" },
             swiftSettings: strataSwiftSettings,
             linkerSettings: [
                 .linkedFramework("AppKit"),
@@ -289,7 +242,7 @@ let package = Package(
             path: "Sources/StrataCLI",
             linkerSettings: [.linkedFramework("AppKit")]
         ),
-        .executableTarget(name: "StrataResourceCheck", dependencies: ["StrataPreviews", "StrataTheme", "StrataSupport"],
+        .executableTarget(name: "StrataResourceCheck", dependencies: ["StrataPreviews", "StrataSupport"],
                           swiftSettings: strataSwiftSettings),
         .target(name: "CPreviewTextTestSupport", dependencies: ["CPreviewText"], path: "Tests/CPreviewTextTestSupport",
                 cSettings: [.unsafeFlags(["-fobjc-arc", "-fobjc-arc-exceptions"])]),
@@ -297,8 +250,8 @@ let package = Package(
                 cSettings: [.unsafeFlags(["-fobjc-arc", "-fobjc-arc-exceptions"])]),
         .target(name: "CNativeReaderTestSupport", dependencies: ["CNativeReaders"], path: "Tests/CNativeReaderTestSupport",
                 cSettings: [.unsafeFlags(["-fobjc-arc", "-fobjc-arc-exceptions"])]),
-        .target(name: "CNativeDrawingTestSupport", dependencies: ["CNativeDrawing"], path: "Tests/CNativeDrawingTestSupport",
-                cSettings: [.unsafeFlags(["-fobjc-arc", "-fobjc-arc-exceptions"])]),
+        .target(name: "CNativeViewTestSupport", path: "Tests/CNativeViewTestSupport",
+                linkerSettings: [.linkedFramework("AppKit")]),
         .testTarget(
             name: "StrataTests",
             dependencies: [
@@ -314,10 +267,8 @@ let package = Package(
                 "CPreviewWebTestSupport",
                 "CNativeReaders",
                 "CNativeReaderTestSupport",
-                "CNativeDrawing",
-                "CNativeDrawingTestSupport",
+                "CNativeViewTestSupport",
                 "StrataArchives",
-                "StrataIndex",
                 "StrataConnections",
                 "StrataFiles",
                 "StrataQueue",

@@ -17,7 +17,6 @@ class ThirdPartyNoticeTests(unittest.TestCase):
 
     def test_every_package_dependency_is_credited_at_its_pinned_version(self):
         packages = re.findall(r'\.package\(url: "([^"]+)"(?:, exact: "([^"]+)")?', self.manifest)
-        self.assertTrue(packages)
         self.assertEqual(len(packages), self.manifest.count(".package("), "Every package dependency is matched.")
         for url, version in packages:
             name = url.rstrip("/").split("/")[-1].removesuffix(".git")
@@ -25,17 +24,6 @@ class ThirdPartyNoticeTests(unittest.TestCase):
                 self.assertIn(url, self.notices)
                 self.assertRegex(self.notices, rf"(?m)^## {re.escape(name)} {re.escape(version)}$" if version
                                  else rf"(?m)^## {re.escape(name)}\b")
-
-    def test_sparkles_license_is_reproduced_verbatim(self):
-        # CI runs these checks before resolving packages; locally (and after any build) the resolved copy is compared.
-        license = ROOT / ".build" / "artifacts" / "sparkle" / "Sparkle" / "LICENSE"
-        if not license.exists():
-            self.skipTest("Sparkle has not been resolved yet")
-
-        def lines(text):
-            return "\n".join(line.rstrip() for line in text.strip().splitlines())
-
-        self.assertIn(lines(license.read_text(encoding="utf-8")), lines(self.notices))
 
     def test_offline_diagram_bundle_matches_the_credited_upstream_release(self):
         resource = ROOT / "Sources/Strata/Previews/Mermaid"

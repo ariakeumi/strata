@@ -2,18 +2,16 @@ import Foundation
 import Testing
 @testable import Strata
 
-/// A results view's titles: the path bar shows a search's query, the window says it's a search, Large Files by name.
+/// A results view's titles: the path bar shows a search's query, the window says it's a search, and Recents uses its own title.
 struct ResultsTitleTests {
-    @Test func aSearchShowsItsQueryAndLargeFilesItsName() throws {
+    @Test func aSearchShowsItsQueryAndRecentsItsTitle() throws {
         #expect(ResultsTitle(.folder(URL(fileURLWithPath: "/tmp"))) == nil)
-        let search = try #require(ResultsTitle(.search("kind:pdf report", scope: nil)))
-        #expect(search.pathBar.contains("kind:pdf report") && search.window.contains("kind:pdf report"))
+        let query = "kind:file size:>500mb"
+        let search = try #require(ResultsTitle(.search(query, scope: URL(filePath: "/tmp"))))
+        #expect(search.pathBar.contains(query) && search.window.contains(query))
         #expect(search.pathBar != search.window)
-        let large = try #require(ResultsTitle(.search(BrowserWindowController.largeFilesQuery, scope: nil)))
-        #expect(large.pathBar == large.window && !large.window.contains("size:"))
         let recents = try #require(ResultsTitle(.recents))
-        let duplicates = try #require(ResultsTitle(.duplicates))
-        #expect(recents.pathBar == recents.window && duplicates.pathBar == duplicates.window && recents.window != duplicates.window)
-        #expect(Set([search.symbol, recents.symbol, duplicates.symbol]).count == 3)
+        #expect(recents.pathBar == recents.window)
+        #expect(recents.symbol != search.symbol)
     }
 }

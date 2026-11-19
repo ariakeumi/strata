@@ -50,10 +50,10 @@ class TestIsolationTests(unittest.TestCase):
 
 
 class OptInTests(unittest.TestCase):
-    """Only the executable opts into the user's own stores (storage, preferences, sounds, themes): everything else,
+    """Only the executable opts into the user's own stores (storage, preferences, sounds): everything else,
     the tests included, gets a private one or none."""
 
-    OPT_IN = re.compile(r"(?<!func )\buseApplication\w*\(")
+    OPT_IN = re.compile(r"(?<!func )\b(useApplication\w*)\(")
 
     def test_only_the_executable_opts_into_the_users_own_stores(self):
         executable = ROOT / "Sources" / "Strata" / "main.swift"
@@ -61,7 +61,8 @@ class OptInTests(unittest.TestCase):
         offenders = [path.relative_to(ROOT).as_posix() for path in swift
                      if path != executable and self.OPT_IN.search(code_only(path.read_text(encoding="utf-8")))]
         self.assertEqual(offenders, [], "Opt into the user's own stores in main.swift only.")
-        self.assertGreaterEqual(len(self.OPT_IN.findall(code_only(executable.read_text(encoding="utf-8")))), 4)
+        self.assertCountEqual(self.OPT_IN.findall(code_only(executable.read_text(encoding="utf-8"))),
+                              ["useApplicationStorage", "useApplicationPreferences", "useApplicationSounds"])
 
 
 class SoundTests(unittest.TestCase):

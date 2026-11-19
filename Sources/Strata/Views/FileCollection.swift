@@ -96,13 +96,11 @@ struct FileCollectionContent {
 
 /// Only visible items format their location; a large result set does not format every path before its first frame.
 struct FileCollectionDetails {
-    let groups: [String: String]
     let copies: CopyProviders
 
     func text(for entry: FileEntry) -> String {
         let parent = entry.url.deletingLastPathComponent()
-        let location = copies.contains(entry.url) ? copies.clipboardPath(parent) ?? "—" : Format.tildePath(parent)
-        return [groups[entry.locationKey], location].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+        return copies.contains(entry.url) ? copies.clipboardPath(parent) ?? "—" : Format.tildePath(parent)
     }
 
     func toolTip(for entry: FileEntry) -> String {
@@ -163,6 +161,7 @@ extension FileCollectionController {
 extension URL {
     /// Identity for lookups: folder URLs from directory listings end in "/", ones built from paths don't.
     nonisolated var fileViewKey: String {
+        guard isFileURL else { return absoluteString }
         var path = path(percentEncoded: false)
         if path.count > 1, path.hasSuffix("/") { path.removeLast() }
         return path
@@ -170,12 +169,12 @@ extension URL {
 }
 
 /// The browser's presentations. Raw values are what Prefs stores (new ones go at the end); `ordered` is the toolbar and
-/// ⌘1–⌘5 order, which matches Finder (⌘1 Icons, ⌘2 List, ⌘3 Columns, ⌘4 Gallery), then Disk Usage.
+/// ⌃⌘1–⌃⌘5 order, which follows Finder's view order, then Disk Usage.
 enum BrowserViewMode: Int, CaseIterable {
     case list, grid, columns, treemap, gallery
 
     static let ordered: [BrowserViewMode] = [.grid, .list, .columns, .gallery, .treemap]
-    /// Index in `ordered` (toolbar segment, and ⌘ number minus one).
+    /// Index in `ordered` (toolbar segment, and shortcut number minus one).
     var position: Int { Self.ordered.firstIndex(of: self) ?? 0 }
 
     var title: String {
@@ -232,15 +231,18 @@ enum BrowserViewMode: Int, CaseIterable {
                                        labels: modes.map(\.title), target: target, action: action)
         group.label = String(localized: "View", comment: "Toolbar item label: the view mode control")
         group.paletteLabel = String(localized: "View Mode", comment: "Toolbar customization palette label")
-        group.toolTip = String(localized: "Change how items are shown (⌘1–⌘5)")
+        group.toolTip = String(localized: "Change how items are shown")
         group.image = NSImage(systemSymbolName: "rectangle.3.group", accessibilityDescription: group.label)
         group.controlRepresentation = .expanded
-        for (item, mode) in zip(group.subitems, modes) { item.toolTip = "\(mode.menuTitle) (⌘\(mode.keyEquivalent))" }
+        for (item, mode) in zip(group.subitems, modes) {
+            let command = StrataCommand.view(mode)
+            item.toolTip = command.shortcut.map { "\(command.title) (\($0))" } ?? command.title
+        }
         group.selectedIndex = 0
         return group
     }
 
-    /// View menu items "as Icons" … "as Disk Usage" with ⌘1–⌘5; each item's tag is the mode's raw value.
+    /// View menu items "as Icons" … "as Disk Usage" with ⌃⌘1–⌃⌘5; each item's tag is the mode's raw value.
     static func menuItems(action: Selector) -> [NSMenuItem] {
         ordered.map { mode in
             let item = StrataCommand.view(mode).menuItem()

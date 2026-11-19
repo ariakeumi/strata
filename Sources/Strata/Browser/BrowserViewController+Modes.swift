@@ -1,13 +1,18 @@
 import AppKit
-import Quartz
 
 /// List, icons, columns, gallery and disk usage: the other presentations are child view controllers fed the same rows.
 extension BrowserViewController {
     @objc func showViewOptions(_ sender: Any?) { services.viewOptions.show(for: self) }
 
-    var effectiveMode: BrowserViewMode { isShowingResults ? results.mode : mode }
+    var effectiveMode: BrowserViewMode {
+        if let smbShares { return smbShares.mode }
+        return isShowingResults ? results.mode : mode
+    }
 
-    func supportsMode(_ mode: BrowserViewMode) -> Bool { !isShowingResults || PaneResults.supports(mode) }
+    func supportsMode(_ mode: BrowserViewMode) -> Bool {
+        if let smbShares { return mode == .list || (smbShares.root != nil && mode != .treemap) }
+        return !isShowingResults || PaneResults.supports(mode)
+    }
 
     var activeView: FileCollectionController? {
         presentations.controller(for: effectiveMode, in: self)
@@ -48,8 +53,11 @@ extension BrowserViewController {
         if effectiveMode == .treemap { sizer.keepOnly([], askedBy: .diskUsage) }
         let revision = navigationRevision
         columnController?.cancelPendingRename()
-        let selection = selectedURLs
-        if isShowingResults { results.chooseMode(newMode) }
+        let selection = presentationSelection.map(\.url)
+        if let smbShares {
+            smbShares.mode = newMode
+            if remember { preferences.viewMode = newMode.rawValue }
+        } else if isShowingResults { results.chooseMode(newMode) }
         else {
             setStoredMode(newMode)
             if remember {
@@ -61,7 +69,10 @@ extension BrowserViewController {
         installActiveView()
         if !applyHeldListing() { pushContent() }
         guard navigationRevision == revision, effectiveMode == newMode else { return }
-        select(selection)
+        if let collection = activeView as? FileItemCollection {
+            let targets = selection.map(rowURL)
+            collection.select(targets, scroll: collection.selectedURLs != targets)
+        } else { select(selection) }
         view.window?.makeFirstResponder(focusView)
         delegate?.browserSelectionDidChange(self)
     }
@@ -96,23 +107,15 @@ extension BrowserViewController {
     /// Hands the current rows (sorted, filtered, with match highlights) to the active presentation.
     func pushContent(animated: Bool = false) {
         guard let active = activeView else { return }
-        let directory = isShowingResults ? nil : directory
+        let directory = smbShares?.root ?? (isShowingResults ? nil : directory)
         guard isShowingResults || directory != nil else { return }
-        let shown = visibleRows.flatMap { $0.groupTitle == nil ? [$0] : $0.children ?? [] }
+        let shown = visibleRows
         var matches: [URL: [Int]] = [:]
         for node in shown where !node.matchIndices.isEmpty { matches[node.url] = node.matchIndices }
-        var details: FileCollectionDetails?
-        if isShowingResults {
-            var groups: [String: String] = [:]
-            for group in visibleRows where group.groupTitle != nil {
-                let title = [group.groupTitle, group.groupDetail].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-                for child in group.children ?? [] { groups[child.entry.locationKey] = title }
-            }
-            details = FileCollectionDetails(groups: groups, copies: services.copies)
-        }
+        let details = isShowingResults && smbShares == nil ? FileCollectionDetails(copies: services.copies) : nil
         let content = FileCollectionContent(complete: !loading.hasPartialListing, directory: directory, entries: shown.map(\.entry), matches: matches, details: details)
         let diskSizeReader: (@MainActor (FileEntry) -> DiskSizeMeasurement)?
-        if directory == nil || directory.map(services.copies.contains) == true || directory.flatMap(ArchiveCache.archive(containing:)) != nil {
+        if directory?.isFileURL != true || directory.map(services.copies.contains) == true || directory.flatMap(ArchiveCache.archive(containing:)) != nil {
             diskSizeReader = nil
         } else {
             diskSizeReader = { [weak self] entry in self?.diskSize(entry) ?? .unavailable }
@@ -136,8 +139,8 @@ extension BrowserViewController {
         if !entry.isDirectory || entry.isSymlink {
             return entry.allocatedSize.map(DiskSizeMeasurement.measured) ?? .unavailable
         }
-        // Disk Usage is asking: with the index off it measures. A folder you excluded stays out of it.
-        guard canMeasure(entry), !services.index.isExcludedByChoice(entry.url) else { return .unavailable }
+        // Disk Usage requests the sizes it displays.
+        guard canMeasure(entry) else { return .unavailable }
         guard let size = folderSize(entry.url, request: true, askedBy: .diskUsage) else { return .measuring }
         guard let bytes = size.allocatedBytes else { return .unavailable }
         return size.allocationComplete ? .measured(bytes) : .partial(bytes)
@@ -169,9 +172,6 @@ extension BrowserViewController: FileCollectionViewDelegate {
            Set(urls.map(\.fileViewKey)) != appliedSelection { pending.cancel() }
         delegate?.browserSelectionDidChange(self)
         prefetchSelection()
-        if QLPreviewPanel.sharedPreviewPanelExists(), let panel = QLPreviewPanel.shared(), panel.isVisible {
-            panel.reloadData()
-        }
     }
 
     func fileView(_ view: NSViewController, menuFor entries: [FileEntry]) -> NSMenu? {
@@ -187,7 +187,7 @@ extension BrowserViewController: FileCollectionViewDelegate {
     }
 
     func fileView(_ view: NSViewController, drop urls: [URL], onto folder: URL?, info: NSDraggingInfo) -> Bool {
-        guard !urls.isEmpty, let target = folder ?? targetDirectory else { return false }
+        guard smbShares == nil, !urls.isEmpty, let target = folder ?? targetDirectory else { return false }
         FileDrop.drop(urls, into: target, info: info, copies: services.copies) { [weak self] move in
             self?.moveOrCopy(urls, into: target, move: move)
         }
@@ -198,7 +198,7 @@ extension BrowserViewController: FileCollectionViewDelegate {
         handle(key)
     }
 
-    /// The same keys in every view: typing filters, Return renames (or opens), Space previews, Esc clears the filter.
+    /// The same keys in every view: typing filters, Return opens or renames, Space previews, Esc clears the filter.
     /// False when the key isn't the pane's to handle.
     func handle(_ key: FileViewKey) -> Bool {
         let typed = filtering.typed
@@ -214,7 +214,9 @@ extension BrowserViewController: FileCollectionViewDelegate {
         case .returnKey:
             // Disk Usage can't rename in place, so Return opens there.
             filtering.finish()
-            if filter.isEmpty && !preferences.returnOpens && effectiveMode != .treemap { renameSelection(nil) } else { openSelection(nil) }
+            if smbShares == nil && filter.isEmpty && !preferences.returnOpens && effectiveMode != .treemap {
+                renameSelection(nil)
+            } else { openSelection(nil) }
         case .space:
             if typed.isEmpty { toggleQuickLook(nil) } else { setFilter(typed + " ") }
         case .tab:
@@ -224,6 +226,7 @@ extension BrowserViewController: FileCollectionViewDelegate {
     }
 
     func fileView(_ view: NSViewController, rename entry: FileEntry, to name: String) {
+        guard entry.url.isFileURL else { return }
         renameItem(entry.url, to: name)
     }
 

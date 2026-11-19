@@ -4,7 +4,6 @@ import Synchronization
 import Testing
 @testable import Strata
 @testable import StrataFiles
-@testable import StrataIndex
 @testable import StrataModel
 @testable import StrataSearch
 @testable import StrataSupport
@@ -87,34 +86,6 @@ import Testing
         #expect(tree.snapshot() == ["cloud/", "cloud/file"])
     }
 
-    @Test func theIndexTakingAFolderOverStopsOnlyAWalkNobodyAskedFor() async throws {
-        let tree = try TestTree("shown/file", "asked/file")
-        let shown = tree.url("shown"), asked = tree.url("asked")
-        defer { [shown, asked].forEach(FolderSizer.invalidate) }
-        let delivery = FolderSizeDelivery()
-        let sizer = FolderSizer(reader: { _, _ in FolderSize(bytes: 3, files: 1) }, deliver: delivery.callback)
-        sizer.request(shown)
-        sizer.request(asked, askedBy: .inspector)
-        sizer.cancel(shown)
-        sizer.cancel(asked)
-        #expect(!sizer.isPending(shown) && sizer.isPending(asked))
-        sizer.request(shown)
-        sizer.cancel { _ in true }
-        #expect(!sizer.isPending(shown) && sizer.isPending(asked))
-        for _ in 0..<3 { (await delivery.take())() }
-        #expect(FolderSizer.cached(shown) == nil && FolderSizer.askedSize(asked)?.bytes == 3)
-
-        // Leaving the folder stops both kinds.
-        FolderSizer.invalidate(asked)
-        sizer.request(shown)
-        sizer.request(asked, askedBy: .inspector)
-        sizer.cancelPending()
-        #expect(!sizer.hasPending)
-        for _ in 0..<2 { (await delivery.take())() }
-        #expect(FolderSizer.cached(shown) == nil && FolderSizer.cached(asked) == nil)
-        #expect(tree.snapshot() == ["asked/", "asked/file", "shown/", "shown/file"])
-    }
-
     @Test func aSizerKeepsWhatItMeasuredUntilItsBrowserLeavesAndLetsGoOnlyOfItsOwn() async throws {
         let tree = try TestTree("a/", "b/", "c/", "d/", "e/", "other/", "gone/")
         let folders = ["a", "b", "c", "d", "e"].map(tree.url), other = tree.url("other"), gone = tree.url("gone")
@@ -154,14 +125,6 @@ import Testing
         }
         #expect(FolderSizer.cached(other)?.bytes == 2)
         #expect(tree.snapshot() == ["a/", "b/", "c/", "d/", "e/", "gone/", "other/"])
-    }
-
-    @Test func theIndexsTotalIsShownOnceItIsOfEverythingAndASizeYouAskedForUntilThen() {
-        let partly = FolderSize(bytes: 10, files: 1, allocatedBytes: 0, allocationComplete: false)
-        let everything = FolderSize(bytes: 10, files: 1), asked = FolderSize(bytes: 900, files: 9)
-        #expect(FolderSizer.shown(indexed: partly, asked: asked) == asked)
-        #expect(FolderSizer.shown(indexed: partly, asked: nil) == partly)
-        #expect(FolderSizer.shown(indexed: everything, asked: asked) == everything)
     }
 
     @Test func aWalkAskedForGoesOnOnlyWhileSomeoneStillWantsIt() async throws {
@@ -430,53 +393,6 @@ import Testing
                                     "home/selected/", "home/selected/file"])
     }
 
-    @Test func aRowLeftUntilAskedIsSortedBySizeAsItShowsThoughItsSizeIsKnown() async throws {
-        let _ = NSApplication.shared
-        let tree = try TestTree("Apps/", "home/asked/file", "home/left/file")
-        let asked = tree.url("home/asked"), left = tree.url("home/left")
-        defer { [asked, left].forEach(FolderSizer.invalidate) }
-        let released = DispatchSemaphore(value: 0)
-        defer { released.signal() }
-        let environment = try IndependentEnvironment(folderSizes: { _, _ in
-            // Only stops a walk whose test never ends.
-            _ = released.wait(timeout: .now() + 600)
-            released.signal()
-            return nil
-        }, indexedFolders: (home: tree.url("home"), applications: tree.url("Apps")))
-        defer { withExtendedLifetime(environment) {} }
-        // With the index off, the folders it would cover are left until you ask.
-        environment.preferences.indexesFiles = false
-        let browser = BrowserViewController(services: environment.services)
-        browser.view.frame = NSRect(x: 0, y: 0, width: 700, height: 500)
-        browser.load(tree.url("home"))
-        await browser.directoryReads.task?.value
-        try #require(browser.isLoaded)
-        defer { browser.stopBackgroundWork() }
-        // You asked for one in the Inspector: its size is known, and its row goes on showing none, as rows there do.
-        let delivery = FolderSizeDelivery()
-        let inspector = FolderSizer(reader: { _, _ in FolderSize(bytes: 900, files: 3) }, deliver: delivery.callback)
-        inspector.request(asked, askedBy: .inspector)
-        (await delivery.take())()
-        let askedRow = try #require(browser.allRows.first { $0.url.lastPathComponent == "asked" })
-        #expect(browser.folderSize(asked)?.bytes == 900)
-        #expect(!browser.showsSize(askedRow.entry) && browser.iconFolderSizeText(askedRow.entry) == "—")
-        // Sorted by size, it is ordered as a row that shows none, beside the other, not by a size nobody sees.
-        browser.applySort(.size, ascending: false, remember: false)
-        #expect(browser.allRows.map(\.url.lastPathComponent) == ["asked", "left"])
-        browser.applySort(.size, ascending: true)
-        #expect(browser.allRows.map(\.url.lastPathComponent) == ["asked", "left"])
-        // Also the first time a listing is sorted, when the folder is opened again with rows sorted by size:
-        // smallest first, a size nobody sees would put the row last.
-        browser.load(asked)
-        await browser.directoryReads.task?.value
-        browser.load(tree.url("home"))
-        await browser.directoryReads.task?.value
-        try #require(browser.isLoaded && browser.allRows.count == 2)
-        try #require(browser.ordering.choice?.key == .size && browser.ordering.choice?.ascending == true)
-        #expect(browser.allRows.map(\.url.lastPathComponent) == ["asked", "left"])
-        #expect(tree.snapshot() == ["Apps/", "home/", "home/asked/", "home/asked/file", "home/left/", "home/left/file"])
-    }
-
     @Test func theInspectorIsToldOfASizeForTheFolderOfADeeperColumn() async throws {
         let _ = NSApplication.shared
         let tree = try TestTree("home/deeper/item.txt")
@@ -621,97 +537,5 @@ import Testing
         controller.refreshPanels()
         #expect(!browser.sizer.isPending(selected) && browser.sizer.isAskedFor(row))
         #expect(tree.snapshot() == ["home/", "home/row/", "home/row/file", "home/selected/", "home/selected/file"])
-    }
-
-    @Test func aSizeYouAskedForIsMeasuredToTheEndAndStandsUntilTheIndexHasReadEverything() async throws {
-        let _ = NSApplication.shared
-        let tree = try TestTree("cloud/file.txt", "row/file.txt")
-        let cloud = tree.url("cloud"), row = tree.url("row")
-        defer { [tree.root, cloud, row].forEach(FolderSizer.invalidate) }
-        let environment = try IndependentEnvironment()
-        defer { withExtendedLifetime(environment) {} }
-        let owner = environment.services
-        // The index holds both folders without having read them.
-        let store = IndexStore()
-        let ids = store.write { s -> Range<Int32> in
-            let root = s.addRoot(path: tree.root.path, mtime: 0)
-            s.flags[Int(root)] &= ~IndexStore.Flag.unreadDirectory
-            let names = Array("cloudrow".utf8)
-            let items = [5, 3].enumerated().map { index, length in
-                ScannedItem(nameOffset: index == 0 ? 0 : 5, nameLength: length, isDirectory: true, isPackage: false,
-                            isSymlink: false, isHidden: false, isMountPoint: false, size: 0, mtime: 1)
-            }
-            return names.withUnsafeBytes { s.appendChildren(items, nameBuffer: $0, of: root) }
-        }
-        let index = FileIndex(storage: environment.storage, copies: owner.copies, preferences: environment.preferences,
-                              store: store, configuredRoots: [tree.root.path], started: true)
-        index.setPhase(.ready)
-        let released = DispatchSemaphore(value: 0)
-        defer { released.signal() }
-        let services = BrowserServices.configured(
-            transfers: owner.transfers, visits: owner.visits, windows: .headless,
-            remote: owner.remote, containers: owner.containers, containerStore: owner.containerStore,
-            clipboard: owner.clipboard, folderSizes: { _, _ in
-                // Only stops a walk whose test never ends.
-                _ = released.wait(timeout: .now() + 600)
-                released.signal()
-                return FolderSize(bytes: 900, files: 9)
-            }, index: index
-        )
-        let browser = BrowserViewController(services: services)
-        browser.view.frame = NSRect(x: 0, y: 0, width: 700, height: 500)
-        browser.load(tree.root)
-        await browser.directoryReads.task?.value
-        try #require(browser.isLoaded)
-        defer { browser.stopBackgroundWork() }
-
-        // You ask for one (the Inspector, Disk Usage); a list asks for the other on its own account.
-        #expect(index.folderSizeLookup(cloud) == .unindexed && index.folderSizeLookup(row) == .unindexed)
-        #expect(browser.folderSize(cloud, request: true, askedBy: .inspector) == nil && browser.sizer.isPending(cloud))
-        #expect(browser.folderSize(row, request: true) == nil && browser.sizer.isPending(row))
-
-        // The index reads everything again, and then holds the folder with part of it unread: the walk you asked
-        // for goes on through both, the other stops, as the index will have that one's size.
-        index.setPhase(.scanning(items: 0))
-        #expect(index.folderSizeLookup(cloud) == .pending)
-        #expect(browser.folderSize(cloud) == nil && browser.folderSize(row) == nil)
-        browser.indexChanged()
-        #expect(browser.sizer.isPending(cloud) && !browser.sizer.isPending(row))
-        store.write { s in
-            s.flags[Int(ids.lowerBound)] &= ~IndexStore.Flag.unreadDirectory
-            s.flags[Int(ids.lowerBound + 1)] &= ~(IndexStore.Flag.unreadDirectory | IndexStore.Flag.unknownAllocation)
-        }
-        index.setPhase(.ready)
-        #expect(browser.folderSize(cloud) == FolderSize(bytes: 0, files: 0, allocatedBytes: 0, allocationComplete: false))
-        browser.indexChanged()
-        #expect(browser.sizer.isPending(cloud))
-
-        // It ends: its size is of everything, and is what views show while the index's total is not.
-        released.signal()
-        var turns = 0
-        while FolderSizer.askedSize(cloud) == nil {
-            turns += 1
-            try #require(turns < 10_000, "The walk asked for never ended.")
-            try await Task.sleep(for: .milliseconds(3))
-        }
-        #expect(browser.folderSize(cloud)?.bytes == 900 && browser.folderSize(row)?.bytes == 0)
-        // Rows sorted by size are ordered by the size they show.
-        browser.applySort(.size, ascending: true, remember: false)
-        #expect(browser.allRows.map(\.url.lastPathComponent) == ["row", "cloud"])
-        // And while the index reads the folder again.
-        store.write { s in s.flags[Int(ids.lowerBound)] |= IndexStore.Flag.unreadDirectory }
-        index.setPhase(.scanning(items: 0))
-        #expect(index.folderSizeLookup(cloud) == .pending && browser.folderSize(cloud)?.bytes == 900)
-        // Once the index has read all of it, the index's total is the one.
-        store.write { s in
-            s.flags[Int(ids.lowerBound)] &= ~(IndexStore.Flag.unreadDirectory | IndexStore.Flag.unknownAllocation)
-        }
-        index.setPhase(.ready)
-        #expect(browser.folderSize(cloud) == FolderSize(bytes: 0, files: 0, allocatedBytes: 0, allocationComplete: true))
-        // What was measured before that does not stand in for a total the index gives later.
-        store.write { s in s.flags[Int(ids.lowerBound)] |= IndexStore.Flag.unreadDirectory }
-        index.setPhase(.scanning(items: 0))
-        #expect(index.folderSizeLookup(cloud) == .pending && browser.folderSize(cloud) == nil)
-        #expect(tree.snapshot() == ["cloud/", "cloud/file.txt", "row/", "row/file.txt"])
     }
 }

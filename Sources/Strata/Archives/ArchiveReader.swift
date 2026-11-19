@@ -99,10 +99,6 @@ nonisolated package struct ArchiveReadListing: Sendable {
 nonisolated package enum ArchiveReader {
     /// The most member data one selection reads.
     package static let memberLimit = ArchiveService.byteLimit
-    /// Where a streamed file's contents go, a chunk at a time.
-    package typealias Sink = (UnsafeRawBufferPointer) throws -> Void
-    /// What a worker counts against a streamed file's limit besides its contents: its mark and the record's fields.
-    package static let recordOverhead = 25
     private static let log = Logger(subsystem: "dev.strata.app", category: "archives")
 
     @concurrent package static func read(_ source: FileReadSource, member: [String]? = nil, directory: Bool = false,
@@ -114,37 +110,11 @@ nonisolated package enum ArchiveReader {
         return try parse(output, member: member, directory: directory)
     }
 
-    /// Copies one file out as it comes, never holding more of it than a chunk: once the worker has named it, `open` is
-    /// told its size and says where its contents go. It returns once all of them have gone there.
-    @concurrent package static func stream(_ source: FileReadSource, member: [String], password: String?,
-                                           open: @escaping @Sendable (Int64) throws -> Sink) async throws {
-        guard !member.isEmpty else { throw ArchiveReadError.unsafe }
-        let path = try requested(member, password: password)
-        let request = ArchiveService.Request(mode: .stream, path: path)
-            .encoded(password: ArchiveService.Secret(password ?? ""))
-        // Copies have reads of their own, so a large one never holds up covers and pages.
-        let (status, complete) = try await withRead(source, allowance: .copies) { archive in
-            try await streamed(request, archive: archive, timeout: 20) { output, reader in
-                try copy(output, reader: reader, path: path, open: open)
-            }
-        }
-        if let error = error(for: status) { throw error }
-        guard complete else { throw ArchiveReadError.unreadable }
-    }
-
     private static func requested(_ member: [String], password: String?) throws -> Data {
         let path = Data(member.joined(separator: "/").utf8)
         guard path.count <= 4096, (password?.utf8.count ?? 0) <= 1024, !path.contains(0),
               !(password?.utf8.contains(0) ?? false) else { throw ArchiveReadError.limit }
         return path
-    }
-
-    /// Reads a worker's copy of the file at `path` from `output` as it comes, and says whether it was all of it, read
-    /// to the end. Output that ends early is left to the read's status; output that goes on wrong is refused.
-    package static func copy(_ output: Int32, reader: PipeReader, path: Data, open: (Int64) throws -> Sink) throws
-        -> Bool {
-        var file = StreamedFile(output, reader: reader)
-        return try file.copy(path, open: open)
     }
 
     /// Lists the whole archive, keeping what a listing cut short by its limits, its time or an error read.
@@ -227,31 +197,6 @@ nonisolated package enum ArchiveReader {
         }
     }
 
-    /// A copy of one file, read on a Dispatch queue since reading its pipe waits; cancelling the task stops it at once.
-    /// The read's status once its worker has ended, and whether `consume` took the whole of its output.
-    private static func streamed(_ request: ArchiveService.Secret, archive: FileHandle, timeout: TimeInterval,
-                                 consume: @escaping @Sendable (Int32, PipeReader) throws -> Bool)
-        async throws -> (ArchiveService.Status, Bool) {
-        let reader = try PipeReader()
-        return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                DispatchQueue.global(qos: .userInitiated).async {
-                    continuation.resume(with: Result {
-                        var result = false
-                        let milliseconds = String(Int((timeout * 1000).rounded()))
-                        let status = try routed(request, archive: archive,
-                                                harness: ["--streaming", "--timeout-ms", milliseconds],
-                                                consume: { result = try consume($0, reader) }) {
-                            try ArchiveService.stream(encoded: request, to: $0, archive: archive, timeout: timeout,
-                                                      reader: reader) { result = try consume($0, reader) }
-                        }
-                        return (status, result)
-                    })
-                }
-            }
-        } onCancel: { reader.stop() }
-    }
-
     /// A read whose output `consume` takes as it comes: through the app's service with `read`, or the harness with
     /// `harness` as its arguments.
     private static func routed(_ request: ArchiveService.Secret, archive: FileHandle, harness arguments: [String],
@@ -317,7 +262,7 @@ nonisolated package enum ArchiveReader {
         }
     }
 
-    fileprivate static func bigEndian(_ bytes: some Collection<UInt8>) -> UInt64 {
+    private static func bigEndian(_ bytes: some Collection<UInt8>) -> UInt64 {
         bytes.reduce(0) { ($0 << 8) | UInt64($1) }
     }
 
@@ -381,77 +326,6 @@ nonisolated package enum ArchiveReader {
                                                 modified: modified, body: body))
         }
         throw ArchiveReadError.unreadable
-    }
-}
-
-nonisolated private struct StreamedFile {
-    private let output: Int32
-    private let reader: PipeReader
-    private var buffered: [UInt8] = []
-    private var chunk = [UInt8](repeating: 0, count: 1 << 16)
-
-    init(_ output: Int32, reader: PipeReader) {
-        self.output = output
-        self.reader = reader
-    }
-
-    mutating func copy(_ path: Data, open: (Int64) throws -> ArchiveReader.Sink) throws -> Bool {
-        guard let magic = try take(4) else { return false }
-        guard magic.elementsEqual("SAP1".utf8) else { throw ArchiveReadError.unreadable }
-        guard let record = try take(21) else { return false }
-        guard record[0] == 1 else { throw record[0] == 3 ? ArchiveReadError.unsafe : ArchiveReadError.unreadable }
-        let length = ArchiveReader.bigEndian(record[1..<5])
-        let size = ArchiveReader.bigEndian(record[5..<13])
-        let seconds = Int64(bitPattern: ArchiveReader.bigEndian(record[13..<21]))
-        guard length == UInt64(path.count) else { throw ArchiveReadError.unsafe }
-        let overhead = ArchiveReader.recordOverhead + path.count
-        guard size <= UInt64(ArchiveService.fileLimit - overhead) else { throw ArchiveReadError.limit }
-        guard ArchiveReader.years.contains(seconds) else { throw ArchiveReadError.unreadable }
-        guard let name = try take(path.count) else { return false }
-        guard name.elementsEqual(path) else { throw ArchiveReadError.unsafe }
-        guard try forward(size, to: try open(Int64(size))) else { return false }
-        guard let mark = try take(1) else { return false }
-        // Another record is the same path listed twice.
-        guard mark[0] == ArchiveReader.endMark else {
-            throw (1...3).contains(mark[0]) ? ArchiveReadError.unsafe : ArchiveReadError.unreadable
-        }
-        guard try take(1) == nil else { throw ArchiveReadError.unreadable }
-        return true
-    }
-
-    /// The next `count` bytes, or nil when the output ends first.
-    private mutating func take(_ count: Int) throws -> [UInt8]? {
-        while buffered.count < count {
-            guard try read() else { return nil }
-        }
-        defer { buffered.removeFirst(count) }
-        return Array(buffered.prefix(count))
-    }
-
-    /// Hands the next `size` bytes to `sink`, straight from each read once what came with the record is passed on;
-    /// false when the output ends first.
-    private mutating func forward(_ size: UInt64, to sink: ArchiveReader.Sink) throws -> Bool {
-        var remaining = size
-        let early = Int(min(UInt64(buffered.count), remaining))
-        try buffered.withUnsafeBytes { try sink(UnsafeRawBufferPointer(rebasing: $0[..<early])) }
-        buffered.removeFirst(early)
-        remaining -= UInt64(early)
-        while remaining > 0 {
-            let count = try chunk.withUnsafeMutableBytes { try reader.readSome(output, into: $0) }
-            guard count > 0 else { return false }
-            let used = Int(min(UInt64(count), remaining))
-            try chunk.withUnsafeBytes { try sink(UnsafeRawBufferPointer(rebasing: $0[..<used])) }
-            buffered.append(contentsOf: chunk[used..<count])
-            remaining -= UInt64(used)
-        }
-        return true
-    }
-
-    /// Reads what has come; false once the output has ended.
-    private mutating func read() throws -> Bool {
-        let count = try chunk.withUnsafeMutableBytes { try reader.readSome(output, into: $0) }
-        buffered.append(contentsOf: chunk[..<count])
-        return count > 0
     }
 }
 

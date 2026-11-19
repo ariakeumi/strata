@@ -9,8 +9,8 @@ final class BrowserServices {
     private static func application() -> BrowserServices {
         BrowserServices(transfers: .shared, visits: .shared, windows: .native, remote: .shared,
                         containers: .shared, containerStore: .shared, clipboard: .shared,
-                        cloudFolders: CloudFolders.discover, tags: .shared, cloud: .shared, git: .shared, index: .shared,
-                        contentIndex: .shared, showSetting: SettingsWindowController.present)
+                        cloudFolders: CloudFolders.discover, tags: .shared, cloud: .shared,
+                        smbMounter: .native, recentFiles: PaneSearch.recentFiles, showSetting: SettingsWindowController.present)
     }
 
     /// Build an independent environment as a unit. Its queue, History, providers and preferences agree from birth;
@@ -23,7 +23,7 @@ final class BrowserServices {
                          mediaDetailsReader: @escaping MediaDetails.Reader = ArchiveMetadata.readDetails,
                          mediaAnalysis: MediaAnalysisReader = MediaAnalysisReader(),
                          folderSizes: @escaping FolderSizer.Reader = FolderSizer.measure,
-                         makeIndex: (@MainActor (CopyProviders) -> FileIndex)? = nil,
+                         smbMounter: SMBMounter = .unavailable,
                          showSetting: @escaping @MainActor (SettingID) -> Void = { _ in }) -> BrowserServices {
         let remote = RemoteServices(preferences: preferences, credentials: credentials,
                                     copyRoot: storage.caches.appending(path: "Servers"), connector: connector)
@@ -31,12 +31,10 @@ final class BrowserServices {
         let copies = CopyProviders(servers: remote.files, containers: containers)
         let history = OperationLog(storage: storage, copies: copies)
         let transfers = TransferQueue(preferences: preferences, history: history, copies: copies)
-        // An index of the caller's own making, over the copies these services use.
-        let index = makeIndex?(copies)
         return configured(transfers: transfers, visits: Frecency(preferences: preferences.defaults), windows: windows,
                           remote: remote, containers: containers, containerStore: containerStore, clipboard: clipboard,
                           directories: directories, mediaReader: mediaReader, mediaDetailsReader: mediaDetailsReader, mediaAnalysis: mediaAnalysis,
-                          folderSizes: folderSizes, index: index, showSetting: showSetting)
+                          folderSizes: folderSizes, smbMounter: smbMounter, showSetting: showSetting)
     }
 
     /// Explicit composition for custom providers and readers. The queue is the sole owner of preferences, History
@@ -53,18 +51,19 @@ final class BrowserServices {
                            thumbnails: FileThumbnails? = nil, itemInfo: ItemInfoLoader? = nil,
                            cloudFolders: @escaping @Sendable () async -> [CloudFolder] = { [] },
                            openContainer: (@MainActor @Sendable (String) async throws -> URL)? = nil,
-                           tags: TagStore? = nil, cloud: CloudStore? = nil, git: GitStatusStore? = nil,
-                           index: FileIndex? = nil, contentIndex: SemanticIndex? = nil,
+                           tags: TagStore? = nil, cloud: CloudStore? = nil,
+                           smbMounter: SMBMounter = .unavailable,
                            showSetting: @escaping @MainActor (SettingID) -> Void = { _ in }) -> BrowserServices {
         BrowserServices(transfers: transfers, visits: visits, directories: directories, windows: windows,
                         volumeSpace: volumeSpace, remote: remote, remoteBrowsing: remoteBrowsing,
                         containers: containers, containerStore: containerStore, clipboard: clipboard,
                         mediaReader: mediaReader, mediaDetailsReader: mediaDetailsReader, mediaAnalysis: mediaAnalysis, folderSizes: folderSizes, thumbnails: thumbnails, itemInfo: itemInfo,
-                        cloudFolders: cloudFolders, openContainer: openContainer, tags: tags, cloud: cloud, git: git,
-                        index: index, contentIndex: contentIndex, showSetting: showSetting)
+                        cloudFolders: cloudFolders, openContainer: openContainer, tags: tags, cloud: cloud,
+                        smbMounter: smbMounter, showSetting: showSetting)
     }
 
     let preferences: Prefs
+    let recentFiles: @MainActor () async -> [FileEntry]
     let showSetting: @MainActor (SettingID) -> Void
     lazy var workspaces = Workspaces(services: self)
     lazy var windowSession = WindowSession(services: self)
@@ -72,9 +71,6 @@ final class BrowserServices {
     lazy var savedSearches = SavedSearches(preferences: preferences)
     lazy var folderViews = FolderViewSettings(preferences: preferences)
     lazy var viewOptions = ViewOptionsWindowController(settings: folderViews)
-    lazy var previews = PreviewCoordinator(preferences: preferences, directories: directories, copies: copies,
-                                          thumbnails: thumbnails, clipboard: clipboard, media: mediaAnalysis, openFile: windows.openFile,
-                                          presentPanel: windows.preview)
 
     let transfers: TransferQueue
     let files: FileCommands
@@ -82,6 +78,7 @@ final class BrowserServices {
     let places: PlaceChecks
     let folderNames: FolderNames
     let remote: RemoteServices
+    let smb: SMBConnections
     let remoteBrowsing: RemoteBrowsing
     let containers: ContainerFiles
     let containerStore: ContainerStore
@@ -100,10 +97,7 @@ final class BrowserServices {
     let windows: BrowserWindows
     let tags: TagStore
     let cloud: CloudStore
-    let git: GitStatusStore
-    let index: FileIndex
-    let contentIndex: SemanticIndex
-    var statuses: FileStatuses { FileStatuses(tags: tags, cloud: cloud, git: git) }
+    var statuses: FileStatuses { FileStatuses(tags: tags, cloud: cloud) }
 
     private init(transfers: TransferQueue, visits: Frecency, directories: DirectoryReader? = nil, windows: BrowserWindows,
                  volumeSpace: @escaping @Sendable (URL) async -> VolumeSpace? = BrowserLoading.readVolumeSpace,
@@ -116,16 +110,19 @@ final class BrowserServices {
                  thumbnails: FileThumbnails? = nil, itemInfo: ItemInfoLoader? = nil,
                  cloudFolders: @escaping @Sendable () async -> [CloudFolder] = { [] },
                  openContainer: (@MainActor @Sendable (String) async throws -> URL)? = nil,
-                 tags: TagStore? = nil, cloud: CloudStore? = nil, git: GitStatusStore? = nil, index: FileIndex? = nil,
-                 contentIndex: SemanticIndex? = nil, showSetting: @escaping @MainActor (SettingID) -> Void) {
+                 tags: TagStore? = nil, cloud: CloudStore? = nil,
+                 smbMounter: SMBMounter, recentFiles: @escaping @MainActor () async -> [FileEntry] = { [] },
+                 showSetting: @escaping @MainActor (SettingID) -> Void) {
         self.preferences = transfers.preferences
         self.showSetting = showSetting
+        self.recentFiles = recentFiles
         self.transfers = transfers
         self.files = FileCommands(transfers: transfers)
         self.visits = visits
         self.places = PlaceChecks(preferences: transfers.preferences, visits: visits, read: PlaceChecks.read)
         self.folderNames = FolderNames(read: FolderNames.read)
         self.remote = remote
+        self.smb = SMBConnections(preferences: transfers.preferences, credentials: remote.smbCredentials, mounter: smbMounter)
         self.remoteBrowsing = remoteBrowsing ?? remote.browsing
         self.containers = containers
         self.containerStore = containerStore
@@ -148,13 +145,7 @@ final class BrowserServices {
         self.itemInfo = itemInfo ?? ItemInfoLoader(copies: self.copies, containerStore: containerStore, mediaReader: mediaReader)
         self.volumeSpace = volumeSpace
         self.windows = windows
-        // An environment of its own reads its own: unstarted indexes in its History's storage, and stores no other window
-        // shares.
         self.tags = tags ?? TagStore(preferences: transfers.preferences, copies: transfers.copies)
         self.cloud = cloud ?? CloudStore()
-        self.git = git ?? GitStatusStore()
-        self.index = index ?? FileIndex(storage: transfers.history.storage, copies: transfers.copies,
-                                        preferences: transfers.preferences)
-        self.contentIndex = contentIndex ?? SemanticIndex(configuration: .init(roots: [], storage: transfers.history.storage))
     }
 }

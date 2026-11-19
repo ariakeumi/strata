@@ -21,7 +21,7 @@ struct BrowserOrderingTests {
                          created: created, added: added, kind: kind, contentType: nil, displayName: label)
     }
 
-    @Test func delayedMetadataCannotReorderRankedResultsOrUnsortedGroups() throws {
+    @Test func delayedMetadataCannotReorderRankedResults() throws {
         let environment = try Environment()
         let browser = BrowserViewController(services: environment.services)
         browser.view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
@@ -34,10 +34,6 @@ struct BrowserOrderingTests {
         browser.resortAfterMetadata()
         #expect(browser.topLevelEntries.map(\.url) == [small.url, large.url])
         #expect(browser.selectedURLs == [small.url])
-        browser.showGroups([(title: "First", detail: "", entries: [small]),
-                            (title: "Second", detail: "", entries: [large])], summary: "Two groups")
-        browser.resortAfterMetadata()
-        #expect(browser.allRows.map(\.groupTitle) == ["First", "Second"])
         withExtendedLifetime(environment) {}
     }
     private final class Metadata {
@@ -261,13 +257,17 @@ struct BrowserOrderingTests {
         withExtendedLifetime(environment) {}
     }
 
-    @Test func metadataResortUpdatesNativeDescendantRowsAndKeepsSelection() throws {
+    @Test func metadataResortUpdatesNativeDescendantRowsAndKeepsSelection() async throws {
+        let tree = try TestTree("group/")
         let environment = try Environment(), browser = BrowserViewController(services: environment.services)
         browser.view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
         let a = entry("a", size: 1), z = entry("z", size: 10)
-        browser.showGroups([(title: "Group", detail: "", entries: [a, z])], summary: "Group")
-        browser.outlineView.sortDescriptors = [NSSortDescriptor(key: "size", ascending: false)]
-        let parent = try #require(browser.allRows.first)
+        browser.load(tree.root)
+        await browser.directoryReads.task?.value
+        browser.applySort(.size, ascending: false)
+        let parent = try #require(browser.node(for: tree.url("group")))
+        browser.listing.replaceChildren(of: parent, with: [a, z], sort: browser.sort)
+        browser.outlineView.reloadItem(parent, reloadChildren: true)
         browser.outlineView.expandItem(parent)
         browser.select([z.url], scroll: false)
         let child = try #require(parent.children?.first { $0.url == a.url })
@@ -290,25 +290,23 @@ struct BrowserOrderingTests {
         window.contentViewController = browser
         defer { window.contentViewController = nil }
         let a = try #require(FileEntry(url: tree.url("a"))), z = try #require(FileEntry(url: tree.url("z")))
-        browser.showGroups([(title: "Group", detail: "", entries: [a, z])], summary: "Group")
+        browser.showResults([a, z], total: 2)
         browser.outlineView.sortDescriptors = [NSSortDescriptor(key: "size", ascending: false)]
-        let parent = try #require(browser.allRows.first)
-        browser.outlineView.expandItem(parent)
         browser.select([a.url], scroll: false)
         browser.renameSelection(nil)
         let row = browser.outlineView.selectedRow
         let column = browser.outlineView.column(withIdentifier: .init("name"))
         let cell = try #require(browser.outlineView.view(atColumn: column, row: row, makeIfNecessary: true) as? NSTableCellView)
         let field = try #require(cell.textField), editor = try #require(field.currentEditor())
-        let changed = try #require(parent.children?.first { $0.url == z.url })
+        let changed = try #require(browser.node(for: z.url))
         changed.entry = FileEntry(url: z.url, name: z.name, isDirectory: false, isPackage: false, isHidden: false,
                                  isSymlink: false, isVolume: false, size: 20, modified: z.modified, created: z.created,
                                  added: z.added, kind: z.kind, contentType: z.contentType)
         browser.resortAfterMetadata()
         #expect(field.currentEditor() === editor)
-        #expect(parent.children?.map(\.url) == [a.url, z.url])
+        #expect(browser.topLevelEntries.map(\.url) == [a.url, z.url])
         window.makeFirstResponder(browser.outlineView)
-        #expect(parent.children?.map(\.url) == [z.url, a.url])
+        #expect(browser.topLevelEntries.map(\.url) == [z.url, a.url])
         #expect(browser.selectedURLs == [a.url])
         #expect(!window.isVisible && tree.snapshot() == ["a", "z"])
         withExtendedLifetime(environment) {}

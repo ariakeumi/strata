@@ -148,17 +148,6 @@ struct CacheRemovalTests {
 
     // MARK: - Strata's own files
 
-    @Test func resettingTheContentIndexRemovesOnlyItsStore() async throws {
-        let tree = try TestTree("store/", "store/notes.txt", "store/index.sealed -> ../outside/keep.txt", "outside/", "outside/keep.txt")
-        var configuration = SemanticIndex.Configuration(roots: [], storage: .shared)
-        configuration.storeDirectory = tree.url("store")
-        let index = SemanticIndex(configuration: configuration)
-        await index.reset()
-        // A link where the store would be goes as a link; what it pointed to, and anything beside it, stay.
-        #expect(tree.snapshot() == ["outside/", "outside/keep.txt", "store/", "store/notes.txt"])
-        #expect(tree.text("outside/keep.txt") == "outside/keep.txt")
-    }
-
     @Test func savingAStoreReplacesOnlyItsOwnFile() throws {
         let tree = try TestTree("outside/", "outside/keep.txt")
         let folder = SecureStorage.Context.shared.url("test-\(UUID().uuidString)", isDirectory: true)

@@ -1,43 +1,8 @@
 import StrataArchives
 import StrataModel
 import Foundation
-import ImageIO
 import CNativeReaders
-import UniformTypeIdentifiers
 import StrataSupport
-
-extension BookFormat {
-    @concurrent package static func cover(_ url: URL, pixels: Int) async throws -> CGImage {
-        return try await cover(FileReadSource(url), pixels: pixels)
-    }
-
-    @concurrent package static func cover(_ source: FileReadSource, pixels: Int) async throws -> CGImage {
-        let url = source.chosen.url
-        let records = try await ArchiveReader.read(source)
-        let path: [String]
-        if url.pathExtension.lowercased() == "epub" {
-            let book = try await EPUBBook.open(source, records: records)
-            guard let cover = book.cover else { throw PreviewError.unsupported }
-            path = cover
-        } else {
-            guard comics.contains(url.pathExtension.lowercased()),
-                  let first = records.lazy.filter({ record in
-                      record.kind == 1 && (1...(8 << 20)).contains(record.size)
-                        && !record.path.contains(where: { $0.hasPrefix(".") || $0 == "__MACOSX" })
-                        && images.contains((record.path.last! as NSString).pathExtension.lowercased())
-                  }).min(by: { $0.path.joined(separator: "/").localizedStandardCompare($1.path.joined(separator: "/")) == .orderedAscending }) else {
-                throw PreviewError.unsupported
-            }
-            path = first.path
-        }
-        let data = try await EPUBBook.bytes(source, records: records, path: path, limit: 8 << 20)
-        let image = try PreviewPicture(data).thumbnail(pixels: pixels)
-        try Task.checkCancellation()
-        let file = try source.open(); defer { try? file.close() }
-        try source.verify(file)
-        return image
-    }
-}
 
 nonisolated package struct EPUBBook: Sendable {
     package struct Chapter: Sendable {
@@ -50,13 +15,11 @@ nonisolated package struct EPUBBook: Sendable {
     package let authors: String
     package let publisher: String
     package let language: String
-    package let cover: [String]?
     package let chapters: [Chapter]
     package let assets: Set<String>
 
-    @concurrent package static func open(_ source: FileReadSource, records existing: [ArchiveRecord]? = nil) async throws -> EPUBBook {
-        let records: [ArchiveRecord]
-        if let existing { records = existing } else { records = try await ArchiveReader.read(source) }
+    @concurrent package static func open(_ source: FileReadSource) async throws -> EPUBBook {
+        let records = try await ArchiveReader.read(source)
         let package = try await packagePath(source, records: records)
         let folder = Array(package.dropLast())
         let opf = try BookXML.parse(try await bytes(source, records: records, path: package, limit: TextFile.limit))
@@ -81,7 +44,7 @@ nonisolated package struct EPUBBook: Sendable {
             return DisplayText.label(values?.joined(separator: ", ") ?? "")
         }
         return EPUBBook(source: source, records: records, title: text("title"), authors: text("creator"),
-                        publisher: text("publisher"), language: text("language"), cover: cover,
+                        publisher: text("publisher"), language: text("language"),
                         chapters: chapters, assets: Set(manifest.items.values.filter { $0.mime == "text/css" || $0.mime.hasPrefix("image/") }.map { $0.path.joined(separator: "/") }))
     }
 

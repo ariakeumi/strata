@@ -6,8 +6,8 @@ import Quartz
 extension BrowserViewController {
     /// The selection's files that are placeholders start arriving (see `PaneFetches.prefetch`).
     func prefetchSelection() {
-        services.previews.selectionChanged(in: self)
         fetches.prefetch(selectedEntries, in: directory)
+        reloadQuickLook()
     }
 
     /// Files arrived from a container: rows show their thumbnails, Quick Look shows what it couldn't before.
@@ -22,7 +22,8 @@ extension BrowserViewController {
             }
         }
         reloadVisibleCells()
-        if QLPreviewPanel.sharedPreviewPanelExists(), let panel = QLPreviewPanel.shared(), panel.isVisible {
+        if QLPreviewPanel.sharedPreviewPanelExists(), let panel = QLPreviewPanel.shared(), panel.isVisible,
+           panel.dataSource === self {
             panel.refreshCurrentPreviewItem()
         }
     }

@@ -6,13 +6,11 @@ extension NSToolbarItem.Identifier {
     static let viewMode = Self("viewMode")
     static let dualPane = Self("dualPane")
     static let share = Self("share")
-    static let sidebarMode = Self("sidebarMode")
 }
 
 /// One browser window (or tab): one or two panes, each with its own place and history, sharing the sidebar,
 /// path bar, search field and inspector, which follow whichever pane has focus.
 final class BrowserWindowController: NSWindowController, NSWindowDelegate {
-    static let largeFilesQuery = "kind:file size:>500mb"
     private static let defaultContentSize = NSSize(width: 1240, height: 780)
 
     let services: BrowserServices
@@ -28,11 +26,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     private var toolbarCustomization: BrowserToolbar?
     private var responderObservation: NSKeyValueObservation?
     private var inspectorObservation: NSKeyValueObservation?
-    /// Searches and Recents follow the index as it changes, at most every couple of seconds: something in your home
-    /// folder is always changing (caches, logs), and searching the whole index on each change kept the CPU busy.
-    let indexRefresh = RefreshThrottle(interval: 2)
-    /// Index changes accumulated while `indexRefresh` waits for its throttle window.
-    var pendingSearchChanges = IndexChanges()
     let palette = CommandPalette()
     var browser: BrowserViewController { pane.browser }
     /// In dual pane, the pane that isn't focused (Copy and Move to Other Pane send there).
@@ -49,8 +42,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     init(location: URL, select: URL? = nil, secondPane: URL? = nil, services: BrowserServices, frame: SavedWindowFrame? = nil) {
         self.services = services
-        pathBar = PathBar(preferences: services.preferences, places: services.places, index: services.index, copies: services.copies,
-                          names: services.folderNames, clipboard: services.clipboard)
+        pathBar = PathBar(preferences: services.preferences, places: services.places, copies: services.copies,
+                          names: services.folderNames)
         let first = Pane(location: location, services: services)
         panes = [first]
         pane = first
@@ -104,7 +97,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         }
         pathBar.onNavigate = { [weak self] url, select in self?.navigate(to: url, select: select) }
         pathBar.onFinishEditing = { [weak self] in self?.focusList() }
-        split.scopeBar.onScopeChange = { [weak self] everywhere in self?.changeSearchScope(everywhere: everywhere) }
         split.scopeBar.onSave = { [weak self] in self?.saveSearch() }
         split.scopeBar.onMatchCase = { [weak self] on in self?.setSearchCase(on) }
         split.scopeBar.onFilters = { [weak self] anchor in
@@ -114,14 +106,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func observeChanges() {
-        NotificationCenter.default.addObserver(self, selector: #selector(indexPhaseChanged), name: .indexPhaseDidChange,
-                                               object: services.index)
-        NotificationCenter.default.addObserver(self, selector: #selector(indexChanged), name: .indexDidChange, object: services.index)
-        NotificationCenter.default.addObserver(self, selector: #selector(indexSwitched), name: .indexDidSwitch, object: services.index)
-        NotificationCenter.default.addObserver(self, selector: #selector(gitStatusChanged), name: .gitStatusDidChange, object: services.git)
         NotificationCenter.default.addObserver(self, selector: #selector(folderNamesRead), name: .folderNamesRead,
                                                object: services.folderNames)
-        services.preferences.notifications.addObserver(self, selector: #selector(sidebarModePrefChanged), name: .prefsChanged, object: nil)
+        services.preferences.notifications.addObserver(self, selector: #selector(browserPreferencesChanged), name: .prefsChanged, object: nil)
         services.remote.notifications.addObserver(self, selector: #selector(serverDisconnected(_:)), name: .remoteServerDisconnected, object: services.remote.servers)
         // The Inspector's Cloud row follows downloads and uploads.
         NotificationCenter.default.addObserver(self, selector: #selector(cloudStatusChanged), name: .cloudStatusChanged,
@@ -299,7 +286,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             origin.browser.pending.selection = results.filter { $0.deletingLastPathComponent().lexicallyStandardized.fileViewKey == folder }
             switch origin.destination {
             case .folder: origin.browser.reloadFolder(nil)
-            case .search, .recents, .duplicates: origin.search.run()
+            case .search, .recents: origin.search.run()
+            case .smb: break
             }
         }
     }
@@ -343,13 +331,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         case .folder(let url):
             let shown = (p.browser.mode == .columns ? p.columnLocation : nil) ?? url
             if bar.url != shown || bar.isShowingTitle { bar.url = shown }
-            updateGitChrome(on: bar, destination: p.destination, location: shown)
-        case .search, .duplicates, .recents:
-            // Results: the path bar keeps the pane's place, without a repository, under the results' title.
+        case .search, .recents, .smb:
+            // Results: the path bar keeps the pane's place, under the results' title.
             guard let title = ResultsTitle(p.destination) else { return }
             if bar.url != p.location { bar.url = p.location }
-            bar.gitRoot = nil
-            bar.branchPill.model = nil
             bar.showTitle(title.pathBar, symbol: title.symbol)
         }
     }
@@ -377,12 +362,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         switch target {
         case .folder(let url): navigate(to: url)
         case .recents: go(.recents)
-        case .search(let saved): go(.search(saved.query, scope: saved.scopePath.flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }))
-        case .duplicates: go(.duplicates)
-        case .largeFiles: go(.search(Self.largeFilesQuery, scope: nil))
+        case .search(let saved): search(saved.query, in: saved.scopePath.flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) })
         case .containers: openContainers()
         case .workspace(let name): if let workspace = services.workspaces.named(name) { services.workspaces.open(workspace) }
         case .server(let id): if let server = services.remote.servers.server(id: id) { openServer(server) }
+        case .smb(let id): openSMB(id)
         }
     }
 
@@ -450,21 +434,24 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         // (`browser(_:landedAt:asked:)`): nothing here asks the disk.
         p.columnLocation = nil
         p.waiting = nil
-        p.search.leave(for: target)
+        p.search.stop()
         if recordHistory, target != p.destination {
             p.history.leave(p.destination)
         }
         p.host.pathBar.cancelEditing()
         if p === pane { pathBar.cancelEditing() }
         p.navigate(to: target)
+        if case .smb = target {} else { p.browser.leaveSMBShareList() }
         switch target {
         case .folder(let url):
             p.location = url
             p.countsVisitOnLanding = countVisit
             p.readFolderEntry(url) { [weak self] in self?.refreshPanels() }
             p.browser.load(url, select: select)
-        case .search, .recents, .duplicates:
+        case .search, .recents:
             p.search.run()
+        case .smb(let id, _):
+            showSMBShares(id, in: p)
         }
         if p === pane {
             updateChrome()
@@ -480,7 +467,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         case .folder(let url):
             let url = (browser.mode == .columns ? pane.columnLocation : nil) ?? url
             pathBar.url = url
-            updateGitChrome()
             split.sidebar.highlight(.folder(url))
             window?.title = Places.displayName(url, copies: services.copies, names: services.folderNames)
             // Not a container's copy: dragging the title's icon would hand out what isn't fully read yet.
@@ -491,21 +477,24 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         case .search(let text, let scope):
             setSearchField(text)
             showResultsTitle()
-            if text == Self.largeFilesQuery && scope == nil {
-                split.sidebar.highlight(.largeFiles)
-            } else {
-                split.sidebar.highlight(services.savedSearches.all.first { $0.query == text && $0.scopePath == scope?.path }.map { .search($0) })
-            }
-            split.scopeBar.configure(folderName: Places.displayName((scope ?? location), copies: services.copies, names: services.folderNames),
-                                     everywhere: scope == nil, matchCase: IndexQuery.isCaseSensitive(text),
+            split.sidebar.highlight(services.savedSearches.all.first { $0.query == text && $0.scopePath == scope.path }.map { .search($0) })
+            split.scopeBar.configure(folderName: Places.displayName(scope, copies: services.copies, names: services.folderNames),
+                                     matchCase: SearchQuery.isCaseSensitive(text),
                                      caseApplies: Self.caseApplies(text))
             split.scopeBar.setSummary(pane.search.summary)
             split.scopeBar.isHidden = false
             split.noticeBar.hide()
-        case .duplicates, .recents:
+        case .recents:
             setSearchField("")
             showResultsTitle()
-            split.sidebar.highlight(destination == .duplicates ? .duplicates : .recents)
+            split.sidebar.highlight(.recents)
+            split.scopeBar.isHidden = true
+            split.noticeBar.hide()
+        case .smb(let id, _):
+            setSearchField("")
+            pathBar.url = location
+            showResultsTitle()
+            split.sidebar.highlight(.smb(id))
             split.scopeBar.isHidden = true
             split.noticeBar.hide()
         }
@@ -515,7 +504,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         updateHeaders()
     }
 
-    /// The query itself, so a search shows what was asked (Large Files by name).
+    /// The query itself, so a search shows what was asked.
     private func showResultsTitle() {
         guard let title = ResultsTitle(destination) else { return }
         pathBar.showTitle(title.pathBar, symbol: title.symbol)
@@ -576,7 +565,16 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @objc func goApplications(_ sender: Any?) { navigate(to: URL(fileURLWithPath: "/Applications")) }
     @objc func goRecents(_ sender: Any?) { go(.recents) }
     @objc func goTrash(_ sender: Any?) { navigate(to: Trash.home) }
-    func showDuplicates() { go(.duplicates) }
+    @objc func goToSidebarFolder(_ sender: NSMenuItem) {
+        guard let folder = sidebarFolder(for: sender) else { return }
+        open(.folder(folder))
+    }
+
+    private func sidebarFolder(for item: NSMenuItem) -> URL? {
+        guard !isClosed, window?.attachedSheet == nil else { return nil }
+        return split.sidebar.folder(at: item.tag)
+    }
+
     @objc func goToFolder(_ sender: Any?) {
         if isDualPane && services.preferences.dualPaneAddressBars {
             pane.host.pathBar.beginEditing()
@@ -625,12 +623,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         services.windows.open(location, nil, window, services, nil)?.workspaceName = name
     }
 
-    @objc func sidebarModeChanged(_ sender: NSToolbarItemGroup) {
-        let tree = sender.selectedIndex == 1
-        if tree != services.preferences.sidebarShowsTree { services.preferences.sidebarShowsTree = tree }
-        if split.splitViewItems.first?.isCollapsed == true { split.toggleSidebar(nil) }
-    }
-
     /// A server's files were let go: panes showing them go home.
     @objc private func serverDisconnected(_ notification: Notification) {
         guard let id = notification.userInfo?["serverID"] as? String else { return }
@@ -642,9 +634,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    /// Every window's switch follows the setting (it's the same for all of them).
-    @objc private func sidebarModePrefChanged() {
-        toolbarItems.sidebarMode?.selectedIndex = services.preferences.sidebarShowsTree ? 1 : 0
+    @objc private func browserPreferencesChanged() {
         updateHeaders()
     }
 
@@ -658,7 +648,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         if let item = toolbarItems.viewMode { configureViewModeItem(item) }
     }
 
-    /// Keeps the toolbar's view switcher in sync when ⌘1–⌘5 change the mode.
     @objc func syncViewMode(_ sender: Any?) {
         browser.setViewMode(sender)
         syncViewModeItem()
@@ -704,8 +693,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         // What's there may have changed while we were away: it's read again in the background, and the sidebar follows.
         services.places.refresh()
         split.sidebar.reload()
-        // Catch commits, checkouts and edits made in other apps while we were in the background (tags in Finder too).
-        for p in panes { services.git.invalidate(containing: p.location) }
+        // Finder tags may have changed while we were in the background.
         panes.forEach { $0.browser.rereadTags() }
         panes.forEach { $0.browser.refreshVolumeSpaceIfVisible() }
     }
@@ -720,37 +708,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         clipboardMonitoring = nil
     }
 
-    @objc private func gitStatusChanged(_ notification: Notification) {
-        updateGitChrome()
-        split.inspector.gitStatusChanged(notification)
-    }
-
-    /// Branch pill after the repository's crumb: from the last status, or straight from HEAD until it arrives.
-    func updateGitChrome() {
-        let shown = (browser.mode == .columns ? pane.columnLocation : nil) ?? location
-        updateGitChrome(on: pathBar, destination: destination, location: shown)
-        for p in panes where !p.host.pathBar.isEditing {
-            let url = (p.browser.mode == .columns ? p.columnLocation : nil) ?? p.location
-            updateGitChrome(on: p.host.pathBar, destination: p.destination, location: url)
-        }
-    }
-
-    func updateGitChrome(on bar: PathBar, destination: Destination, location: URL) {
-        let store = services.git
-        guard case .folder = destination, let repository = store.repository(containing: location) else {
-            bar.gitRoot = nil
-            bar.branchPill.model = nil
-            return
-        }
-        bar.gitRoot = repository.root
-        bar.branchPill.model = store.snapshot(for: repository.root).map(GitBranchPill.Model.init)
-            ?? GitBranchPill.Model(placeholderFor: repository)
-    }
-
     func privacyChanged() {
         panes.forEach { $0.browser.privacyChanged() }
-        services.index.refreshConfig()
-        if services.index.isOn { StrataAI.startIndexing() }
+        panes.forEach { $0.search.run() }
     }
 
     /// The workspace this tab was opened from or saved as: Window ▸ Workspaces can update it, and opening it again
@@ -777,11 +737,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     func refreshStatus() {
         guard !isClosed else { return }
-        var status = browser.statusText
-        if case .scanning(let items) = services.index.phase {
-            status += (status.isEmpty ? "" : "  ·  ") + String(localized: "Indexing \(items) items…", comment: "plural")
-        }
-        split.status.text = status
+        split.status.text = browser.statusText
         split.status.details = browser.volumeSpaceDescription
         // Two panes: each shows its own counts under its list; the shared bar would sit across both.
         split.status.isHidden = isDualPane
@@ -816,6 +772,7 @@ extension BrowserWindowController: NSMenuItemValidation {
             return BrowserViewMode(rawValue: item.tag).map(browser.supportsMode) ?? false
         case #selector(goBack(_:)): return pane.history.canGo(.back)
         case #selector(goForward(_:)): return pane.history.canGo(.forward)
+        case #selector(goToSidebarFolder(_:)): return sidebarFolder(for: item) != nil
         case #selector(toggleDualPane(_:)):
             item.state = isDualPane ? .on : .off
             return true

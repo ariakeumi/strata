@@ -1,7 +1,7 @@
 # Reopen browsing history
 
 When Reopen Windows is enabled, Strata's automatic session keeps each pane's recent Back and Forward history as well
-as its folder and view, the active side, and the selected tab. Local searches, Recents and Duplicates remain places
+as its folder and view, the active side, and the selected tab. Local searches and Recents remain places
 in that history. A saved local results view can reopen without adding an extra Back step. Named workspaces keep
 saving just their layout and views; opening one starts fresh.
 

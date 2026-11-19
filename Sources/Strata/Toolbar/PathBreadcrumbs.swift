@@ -1,27 +1,19 @@
 import AppKit
 
-/// Fits complete parent steps around the current folder; an optional branch badge uses the space left over.
+/// Fits complete parent steps around the current folder.
 final class PathBreadcrumbs: NSView {
     struct Step {
         let button: CrumbButton
         var chevron: ChevronButton?
-        var branch: GitBranchPill?
 
         var width: CGFloat { button.intrinsicContentSize.width + (chevron?.intrinsicContentSize.width ?? 0) }
-        var branchWidth: CGFloat {
-            guard let branch, branch.model != nil else { return 0 }
-            return branch.intrinsicContentSize.width + PathBreadcrumbs.branchSpacing
-                + (chevron == nil ? 0 : PathBreadcrumbs.branchSpacing)
-        }
     }
 
     private static let minimumCurrentWidth: CGFloat = 96
-    private static let branchSpacing: CGFloat = 2
     private var steps: [Step] = []
     private struct Fitting {
         let visible: Set<Int>
         let currentWidth: CGFloat
-        let branch: Int?
     }
 
     var buttons: [CrumbButton] { steps.map(\.button) }
@@ -41,7 +33,6 @@ final class PathBreadcrumbs: NSView {
         self.steps = steps
         for step in steps {
             addSubview(step.button)
-            if let branch = step.branch { addSubview(branch) }
             if let chevron = step.chevron { addSubview(chevron) }
         }
         needsLayout = true
@@ -56,15 +47,9 @@ final class PathBreadcrumbs: NSView {
         for (index, step) in steps.enumerated() {
             setVisible(fitting.visible.contains(index), view: step.button)
             setVisible(fitting.visible.contains(index), view: step.chevron)
-            setVisible(fitting.branch == index, view: step.branch)
             guard fitting.visible.contains(index) else { continue }
             let width = index == current ? fitting.currentWidth : step.button.intrinsicContentSize.width
             place(step.button, width: width, at: &x)
-            if fitting.branch == index, let pill = step.branch {
-                x += Self.branchSpacing
-                place(pill, width: pill.intrinsicContentSize.width, at: &x)
-                if step.chevron != nil { x += Self.branchSpacing }
-            }
             if let chevron = step.chevron { place(chevron, width: chevron.intrinsicContentSize.width, at: &x) }
         }
     }
@@ -79,18 +64,11 @@ final class PathBreadcrumbs: NSView {
             currentWidth = min(steps[current].width, available - steps[0].width)
             remaining = available - steps[0].width - currentWidth
         }
-        let parents = steps.indices.filter { !visible.contains($0) }.sorted {
-            let leftRepository = steps[$0].branch != nil, rightRepository = steps[$1].branch != nil
-            return leftRepository == rightRepository ? $0 > $1 : leftRepository
-        }
-        for index in parents where steps[index].width <= remaining {
+        for index in steps.indices.reversed() where !visible.contains(index) && steps[index].width <= remaining {
             visible.insert(index)
             remaining -= steps[index].width
         }
-        let branch = steps.indices.first {
-            visible.contains($0) && steps[$0].branchWidth > 0 && steps[$0].branchWidth <= remaining
-        }
-        return Fitting(visible: visible, currentWidth: currentWidth, branch: branch)
+        return Fitting(visible: visible, currentWidth: currentWidth)
     }
 
     private func place(_ view: NSView, width: CGFloat, at x: inout CGFloat) {

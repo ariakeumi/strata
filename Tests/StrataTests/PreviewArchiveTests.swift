@@ -153,8 +153,6 @@ struct PreviewArchiveTests {
         for (status, name) in statuses { #expect(declared[name] == status.rawValue, "\(name)") }
         let bytes = try #require(worker.firstMatch(of: #/#define strata_archive_byte_limit \((\d+)ULL << (\d+)\)/#))
         #expect(try #require(Int(bytes.output.1)) << (try #require(Int(bytes.output.2))) == ArchiveService.byteLimit)
-        let file = try #require(worker.firstMatch(of: #/#define strata_archive_file_limit \((\d+)ULL << (\d+)\)/#))
-        #expect(try #require(Int(file.output.1)) << (try #require(Int(file.output.2))) == ArchiveService.fileLimit)
         func value(of name: String) throws -> Int {
             let match = try #require(try Regex("\\b\(name) = (0x[0-9A-Fa-f]+|[0-9]+)").firstMatch(in: worker), "\(name)")
             let text = String(try #require(match.output[1].substring))
@@ -163,7 +161,7 @@ struct PreviewArchiveTests {
         #expect(try value(of: "strata_archive_end") == Int(ArchiveReader.endMark))
         #expect(try value(of: "strata_archive_end_more") == Int(ArchiveReader.moreMark))
         #expect(try value(of: "strata_archive_snapshot") == Int(ArchiveReader.snapshotMark))
-        for mode in [ArchiveService.Request.Mode.list, .extract, .survey, .unpack, .stream] {
+        for mode in [ArchiveService.Request.Mode.list, .extract, .survey, .unpack] {
             #expect(try value(of: "strata_archive_\(mode)") == Int(mode.rawValue))
         }
     }
@@ -319,55 +317,6 @@ struct PreviewArchiveTests {
         #expect(tree.snapshot() == ["pack.tar"])
     }
 
-    @Test func folderCopyIsCompletePrivateQuarantinedAndReceiptCleanupKeepsForeignChildren() async throws {
-        let tree = try TestTree("pack.tar", "outside/keep", "sibling")
-        let source = try archive(tree, [("a/note.txt", "chosen"), ("a/deep/file", "deep"), ("ab/note.txt", "look alike")])
-        let mark = Data("0081;12345678;Strata;test".utf8)
-        try source.chosen.withDescriptor { fd, _ in
-            try #require(mark.withUnsafeBytes { fsetxattr(fd, "com.apple.quarantine", $0.baseAddress, mark.count, 0, 0) } == 0)
-        }
-        // The source's metadata changed before the operation, so capture it again.
-        let quarantined = try FileReadSource(tree.url("pack.tar"))
-        let records = try await ArchiveReader.read(quarantined, member: ["a"], directory: true)
-        var lease: PreviewArchiveLease? = try await PreviewArchiveLease.materialize(records, member: ["a"], in: tree.url("cache"), source: quarantined)
-        let root = try #require(lease?.root), url = try #require(lease?.url)
-        #expect(TestTree.listing(of: url) == ["deep/", "deep/file", "note.txt"])
-        #expect(try String(contentsOf: url.appendingPathComponent("note.txt"), encoding: .utf8) == "chosen")
-        var info = stat()
-        #expect(lstat(url.path, &info) == 0 && info.st_mode & 0o7777 == 0o700)
-        let note = url.appendingPathComponent("note.txt")
-        #expect(lstat(note.path, &info) == 0 && info.st_mode & 0o7777 == 0o600)
-        var value = Data(count: 128)
-        let count = value.withUnsafeMutableBytes { getxattr(note.path, "com.apple.quarantine", $0.baseAddress, 128, 0, XATTR_NOFOLLOW) }
-        #expect(count == mark.count && value.prefix(max(0, count)) == mark)
-        try Data("foreign".utf8).write(to: url.appendingPathComponent("foreign"))
-        lease = nil
-        #expect(TestTree.listing(of: root) == ["a/", "a/foreign"])
-        #expect(tree.text("outside/keep") == "outside/keep" && tree.text("sibling") == "sibling")
-        #expect(tree.snapshot().filter { !$0.hasPrefix("cache/") } == ["cache/", "outside/", "outside/keep", "pack.tar", "sibling"].filter { !$0.hasPrefix("cache/") })
-    }
-
-    @Test func cleanupRefusesAReplacedFileDirectoryOrLinkAndTheirTargets() async throws {
-        for replacement in ["file", "directory", "link"] {
-            let tree = try TestTree("pack.tar", "outside/keep", "sibling")
-            let source = try archive(tree, [("a/note.txt", "chosen")])
-            let records = try await ArchiveReader.read(source, member: ["a"], directory: true)
-            var lease: PreviewArchiveLease? = try await PreviewArchiveLease.materialize(records, member: ["a"], in: tree.url("cache"), source: source)
-            let root = try #require(lease?.root), url = try #require(lease?.url)
-            try FileManager.default.moveItem(at: url, to: tree.url("parked"))
-            switch replacement {
-            case "file": try Data("replacement".utf8).write(to: url)
-            case "directory": try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
-            default: try FileManager.default.createSymbolicLink(at: url, withDestinationURL: tree.url("outside"))
-            }
-            let before = tree.snapshot()
-            lease = nil
-            #expect(tree.snapshot() == before)
-            #expect(FileManager.default.fileExists(atPath: root.path))
-            #expect(tree.text("parked/note.txt") == "chosen" && tree.text("outside/keep") == "outside/keep")
-        }
-    }
-
     @Test func unsafePathsDuplicatesLinksAndPartialStreamsNeverCreateStaging() async throws {
         for names in [["../outside"], ["/absolute"], ["a/../outside"], ["a\nforged"], ["a", "a"], ["a", "a/child"], ["e\u{301}/x", "é/y"]] {
             let tree = try TestTree("pack.tar", "outside", "sibling")
@@ -386,55 +335,26 @@ struct PreviewArchiveTests {
         #expect(throws: (any Error).self) { try ArchiveReader.parse(Data("SAP1\u{1}".utf8), member: nil, directory: false) }
     }
 
-    @Test func materializationRefusesTheWholeMalformedBatchBeforeCreatingAnything() async throws {
-        let tree = try TestTree("pack.tar", "outside", "sibling")
-        let source = try archive(tree, [("a/first", "valid")])
-        let valid = ArchiveRecord(path: ["a", "first"], kind: 1, size: 1, modified: .distantPast, body: Data([1]))
-        for path in [["a", "..", "outside"], ["ab", "outside"], ["a", "/outside"], ["a", "first"]] {
-            let bad = ArchiveRecord(path: path, kind: 1, size: 1, modified: .distantPast, body: Data([2]))
-            let before = tree.snapshot()
-            await #expect(throws: (any Error).self) {
-                try await PreviewArchiveLease.materialize([valid, bad], member: ["a"], in: tree.url("cache"), source: source)
-            }
-            #expect(tree.snapshot() == before)
-        }
-    }
-
-    @Test func sourceReplacementsContentEditsAndStagingSymlinksAreRefused() async throws {
+    @Test func sourceReplacementsAndContentEditsAreRefused() async throws {
         let tree = try TestTree("pack.tar", "outside/keep", "sibling")
         let source = try archive(tree, [("a", "chosen")])
-        let records = try await ArchiveReader.read(source, member: ["a"])
-        try #require(chmod(tree.url("outside").path, 0o700) == 0)
-        try FileManager.default.createSymbolicLink(at: tree.url("cache"), withDestinationURL: tree.url("outside"))
-        let before = tree.snapshot()
-        var outsideBefore = stat()
-        try #require(lstat(tree.url("outside").path, &outsideBefore) == 0)
-        await #expect(throws: (any Error).self) {
-            try await PreviewArchiveLease.materialize(records, member: ["a"], in: tree.url("cache"), source: source)
-        }
-        #expect(tree.snapshot() == before)
-        var outsideAfter = stat()
-        try #require(lstat(tree.url("outside").path, &outsideAfter) == 0)
-        let afterTimes: [Int] = [outsideAfter.st_mtimespec.tv_sec, outsideAfter.st_mtimespec.tv_nsec,
-                                 outsideAfter.st_ctimespec.tv_sec, outsideAfter.st_ctimespec.tv_nsec]
-        let beforeTimes: [Int] = [outsideBefore.st_mtimespec.tv_sec, outsideBefore.st_mtimespec.tv_nsec,
-                                  outsideBefore.st_ctimespec.tv_sec, outsideBefore.st_ctimespec.tv_nsec]
-        #expect(afterTimes == beforeTimes)
         try FileManager.default.moveItem(at: tree.url("pack.tar"), to: tree.url("original.tar"))
         _ = try archive(tree, [("a", "replacement")])
         let replaced = tree.snapshot()
         await #expect(throws: (any Error).self) { try await ArchiveReader.read(source, member: ["a"]) }
         #expect(tree.snapshot() == replaced)
+
         let current = try FileReadSource(tree.url("pack.tar"))
         let handle = try FileHandle(forWritingTo: tree.url("pack.tar"))
         try handle.seek(toOffset: 512)
-        try handle.write(contentsOf: Data("altered    ".utf8)); try handle.close()
+        try handle.write(contentsOf: Data("altered    ".utf8))
+        try handle.close()
         let changed = tree.snapshot()
         await #expect(throws: (any Error).self) { try await ArchiveReader.read(current, member: ["a"]) }
         #expect(tree.snapshot() == changed)
     }
 
-    @Test func encryptedZipUsesOnlyItsPreviewPasswordAndCancellationReleasesTheRequest() async throws {
+    @Test func encryptedZipReadsOnlyWithTheCorrectPassword() async throws {
         let tree = try TestTree("encrypted.zip", "other.tar")
         let zip = try #require(Data(base64Encoded: Self.encryptedZIP))
         try zip.write(to: tree.url("encrypted.zip"))
@@ -442,76 +362,9 @@ struct PreviewArchiveTests {
         #expect(try await ArchiveReader.read(source).count == 1)
         await #expect(throws: ArchiveReadError.password) { try await ArchiveReader.read(source, member: ["note.txt"]) }
         await #expect(throws: ArchiveReadError.password) { try await ArchiveReader.read(source, member: ["note.txt"], password: "wrong") }
-        let access = PreviewArchiveAccess()
-        access.reset(source)
-        var prompts = 0
-        access.requestPassword = { _ in prompts += 1; return "preview-test" }
-        let first = try await access.read(member: ["note.txt"])
-        #expect(first.first?.body == Data("archive secret\n".utf8) && prompts == 1)
-        _ = try await access.read(member: ["note.txt"])
-        #expect(prompts == 1)
-        access.reset(source)
-        access.requestPassword = { _ in prompts += 1; return nil }
-        await #expect(throws: CancellationError.self) { try await access.read(member: ["note.txt"]) }
-        #expect(prompts == 2)
-        let prompt = PreviewPasswordPrompt()
-        #expect(await prompt.request("fixture", in: nil) == nil)
+        let records = try await ArchiveReader.read(source, member: ["note.txt"], password: "preview-test")
+        #expect(records.first?.body == Data("archive secret\n".utf8))
         #expect(tree.snapshot() == before)
-    }
-
-    @Test func previewCacheIsBoundedIncludingOrphansAndNeverDeletesUnknownFiles() async throws {
-        let tree = try TestTree("pack.tar", "outside/keep")
-        let source = try archive(tree, [("a", "chosen")])
-        var lease: PreviewArchiveLease? = try await PreviewArchiveLease.stream(member: ["a"], in: tree.url("cache"),
-                                                                                         source: source, password: nil)
-        let root = try #require(lease?.root)
-        lease = nil
-        #expect(!FileManager.default.fileExists(atPath: root.path))
-        let fd = open(tree.url("cache/orphan").path, O_CREAT | O_EXCL | O_WRONLY, 0o600)
-        try #require(fd >= 0)
-        try #require(ftruncate(fd, PreviewArchiveLease.cacheLimit) == 0)
-        close(fd)
-        let before = tree.snapshot()
-        await #expect(throws: ArchiveReadError.limit) {
-            try await PreviewArchiveLease.stream(member: ["a"], in: tree.url("cache"), source: source, password: nil)
-        }
-        #expect(tree.snapshot() == before && tree.text("outside/keep") == "outside/keep")
-    }
-
-    @Test func copiedArchiveFolderOutlivesPreviewAndPasteAndMoveUsesTheOwningCopyAndUndo() async throws {
-        let tree = try TestTree("pack.tar", "destination/keep", "sibling")
-        _ = try archive(tree, [("a/note.txt", "chosen"), ("ab/note.txt", "look alike")])
-        let environment = try PreviewEnvironment(tree)
-        let browser = BrowserViewController(services: environment.services)
-        _ = browser.view
-        let coordinator = environment.services.previews
-        coordinator.show(try #require(FileEntry(url: tree.url("pack.tar"))), from: browser, present: false)
-        let content = try #require(coordinator.content)
-        await content.session.task?.value
-        let item = try #require(content.session.roots.first { $0.name == "a" })
-        content.session.select(item)
-        let target = try #require(PreviewCommandTarget(session: content.session))
-        coordinator.perform(.copy, target: target)
-        await content.archiveContent.commandTask?.value
-        let copied = try #require(environment.services.clipboard.read().urls.first)
-        #expect(copied.lastPathComponent == "a" && ReadOnlyCopies.contains(copied, copies: environment.services.copies))
-        #expect(!ReadOnlyCopies.contains(tree.url("environment/clipboard-lookalike/a"), copies: environment.services.copies))
-        coordinator.close()
-        #expect(TestTree.listing(of: copied) == ["note.txt"])
-        let undo = UndoManager()
-        let job = environment.services.transfers.enqueue([copied], to: tree.url("destination"), mode: .move, undo: undo, conflicts: .keepBoth)
-        await job.finished()
-        #expect(job.mode == .copy && job.failures.isEmpty && tree.text("destination/a/note.txt") == "chosen")
-        #expect(TestTree.listing(of: copied) == ["note.txt"])
-        undo.undo()
-        await FileOps.undoWork?.value
-        #expect(TestTree.listing(of: tree.url("destination")) == ["keep"])
-        #expect(tree.text("destination/keep") == "destination/keep" && tree.text("sibling") == "sibling")
-        #expect(TestTree.listing(of: copied) == ["note.txt"])
-        undo.redo()
-        await FileOps.undoWork?.value
-        #expect(tree.text("destination/a/note.txt") == "chosen")
-        withExtendedLifetime(environment) {}
     }
 }
 
@@ -537,91 +390,6 @@ extension PreviewArchiveTests {
         #expect(tree.snapshot() == before && tree.text("outside") == "outside" && tree.text("sibling") == "sibling")
     }
 
-    @Test func oldPasswordFailuresCannotClearOrPromptForAReplacementSource() async throws {
-        let tree = try TestTree("pack.tar", "other.tar", "sibling")
-        let first = try FileReadSource(tree.url("pack.tar")), second = try FileReadSource(tree.url("other.tar"))
-        let (started, signal) = AsyncStream<Void>.makeStream()
-        var held: CheckedContinuation<[ArchiveRecord], Error>?
-        let access = PreviewArchiveAccess { source, _, _, _ in
-            if source === second { return [] }
-            return try await withCheckedThrowingContinuation { held = $0; signal.yield(()) }
-        }
-        var prompts = 0
-        access.requestPassword = { _ in prompts += 1; return "must not be requested" }
-        access.reset(first)
-        let task = Task { try await access.read() }
-        var iterator = started.makeAsyncIterator()
-        _ = await iterator.next()
-        access.reset(second)
-        held?.resume(throwing: ArchiveReadError.password)
-        await #expect(throws: CancellationError.self) { try await task.value }
-        #expect(try await access.read().isEmpty && prompts == 0 && access.source === second)
-        signal.finish()
-        #expect(tree.snapshot() == ["other.tar", "pack.tar", "sibling"])
-    }
-
-    @Test func memberChangesAndClosingRejectHeldContentAndReleaseOnlyOwnedScratch() async throws {
-        let tree = try TestTree("pack.tar", "outside/keep")
-        let environment = try PreviewEnvironment(tree)
-        let a = ArchiveRecord(path: ["a.txt"], kind: 1, size: 1, modified: .distantPast, body: Data("a".utf8))
-        let b = ArchiveRecord(path: ["b.txt"], kind: 1, size: 1, modified: .distantPast, body: Data("b".utf8))
-        let (started, signal) = AsyncStream<String>.makeStream()
-        var held: [String: CheckedContinuation<[ArchiveRecord], Error>] = [:]
-        let access = PreviewArchiveAccess(copying: { _, member, _, _ in
-            guard let name = member?.first else { return [a,b] }
-            return try await withCheckedThrowingContinuation { held[name] = $0; signal.yield(name) }
-        })
-        let session = PreviewSession(reader: environment.services.directories, archiveAccess: access)
-        let content = PreviewBrowserController(session: session, preferences: environment.preferences,
-                                               thumbnails: environment.services.thumbnails, copies: environment.services.copies, clipboard: environment.services.clipboard)
-        session.show(try #require(FileEntry(url: tree.url("pack.tar"))), showHidden: true, applications: .standard)
-        await session.task?.value
-        let first = try #require(session.roots.first { $0.name == "a.txt" }), second = try #require(session.roots.first { $0.name == "b.txt" })
-        var iterator = started.makeAsyncIterator()
-        session.select(first)
-        let oldTask = try #require(content.archiveContent.task)
-        #expect(await iterator.next() == "a.txt")
-        session.select(second)
-        let newTask = try #require(content.archiveContent.task)
-        #expect(await iterator.next() == "b.txt")
-        held.removeValue(forKey: "a.txt")?.resume(returning: [a])
-        await oldTask.value
-        #expect(content.archiveContent.lease == nil && session.selected === second && content.archiveContent.isLoading)
-        held.removeValue(forKey: "b.txt")?.resume(returning: [b])
-        await newTask.value
-        let leaseURL = try #require(content.archiveContent.lease?.url), root = try #require(content.archiveContent.lease?.root)
-        #expect(try String(contentsOf: leaseURL, encoding: .utf8) == "b" && content.fileView.shownURL == leaseURL)
-        let target = try #require(PreviewCommandTarget(session: session))
-        #expect(target.path(copies: environment.services.copies) == tree.url("pack.tar").path+"!/b.txt")
-        session.select(first)
-        let closingTask = try #require(content.archiveContent.task)
-        #expect(await iterator.next() == "a.txt")
-        content.cancelPreviewLoading(nil)
-        #expect(!content.archiveContent.isLoading && content.cancelButton.isHidden)
-        content.close()
-        held.removeValue(forKey: "a.txt")?.resume(returning: [a])
-        await closingTask.value
-        #expect(content.archiveContent.lease == nil && content.fileView.shownURL == nil && session.isClosed)
-        #expect(!FileManager.default.fileExists(atPath: root.path))
-        signal.finish()
-        #expect(tree.snapshot().filter { !$0.hasPrefix("environment/") } == ["outside/", "outside/keep", "pack.tar"])
-        withExtendedLifetime(environment) {}
-    }
-
-    @Test func replacedCacheRootIsNeverAdoptedDuringCleanup() async throws {
-        let tree = try TestTree("pack.tar", "outside/keep")
-        try Data(ContainerTests.tarFile("a", "owned")+[UInt8](repeating: 0, count: 1024)).write(to: tree.url("pack.tar"))
-        let source = try FileReadSource(tree.url("pack.tar"))
-        var lease: PreviewArchiveLease? = try await PreviewArchiveLease.stream(member: ["a"], in: tree.url("cache"),
-                                                                                         source: source, password: nil)
-        let root = try #require(lease?.root)
-        try FileManager.default.moveItem(at: root, to: tree.url("parked"))
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
-        let before = tree.snapshot()
-        lease = nil
-        #expect(tree.snapshot() == before && tree.text("parked/a") == "owned" && tree.text("outside/keep") == "outside/keep")
-    }
-
     @Test func requestsAreBoundedBeforeTheWorkerReadsThem() async throws {
         let tree = try TestTree("pack.tar", "sibling")
         try Data(ContainerTests.tarFile("a", "kept")+[UInt8](repeating: 0, count: 1024)).write(to: tree.url("pack.tar"))
@@ -639,6 +407,8 @@ extension PreviewArchiveTests {
         #expect(longPassword.status == 41 && longPassword.output.isEmpty)
         let malformed = try await harness(request: Data([3,0,0,0,0,0,0,0,0,0]), file: file)
         #expect(malformed.status == 43 && malformed.output.isEmpty)
+        let retiredMode = try await harness(request: Data([4,0,0,0,0,1,0,0,0,0,97]), file: file)
+        #expect(retiredMode.status == 43 && retiredMode.output.isEmpty)
         // A request past 8 KB never reaches a worker, though a plain listing follows its first 10 bytes.
         let oversized = try await harness(request: Data(count: ArchiveService.requestLimit + 1), file: file)
         #expect(oversized.status == 41 && oversized.output.isEmpty)
@@ -649,112 +419,20 @@ extension PreviewArchiveTests {
     }
 }
 
-
 extension PreviewArchiveTests {
-    @Test func inheritedAccessGrantsAreRemovedFromThePrivateStagingRoot() async throws {
-        let tree = try TestTree("pack.tar", "cache/", "outside/keep")
-        try #require(chmod(tree.url("cache").path, 0o700) == 0)
-        try Data(ContainerTests.tarFile("a", "owned")+[UInt8](repeating: 0, count: 1024)).write(to: tree.url("pack.tar"))
-        let created: acl_t = try #require(acl_init(1))
-        var list: acl_t? = created
-        defer { if let list { acl_free(UnsafeMutableRawPointer(list)) } }
-        var entry: acl_entry_t?
-        try #require(acl_create_entry(&list, &entry) == 0)
-        try #require(acl_set_tag_type(entry, ACL_EXTENDED_ALLOW) == 0)
-        var user = UUID().uuid
-        try #require(withUnsafePointer(to: &user) { acl_set_qualifier(entry, $0) } == 0)
-        var permissions: acl_permset_t?
-        try #require(acl_get_permset(entry, &permissions) == 0)
-        try #require(acl_add_perm(permissions, ACL_READ_DATA) == 0)
-        var flags: acl_flagset_t?
-        try #require(acl_get_flagset_np(entry.map { UnsafeMutableRawPointer($0) }, &flags) == 0)
-        try #require(acl_add_flag_np(flags, ACL_ENTRY_FILE_INHERIT) == 0)
-        try #require(acl_add_flag_np(flags, ACL_ENTRY_DIRECTORY_INHERIT) == 0)
-        try #require(acl_set_file(tree.url("cache").path, ACL_TYPE_EXTENDED, list) == 0)
-        let source = try FileReadSource(tree.url("pack.tar"))
-        var lease: PreviewArchiveLease? = try await PreviewArchiveLease.stream(member: ["a"], in: tree.url("cache"),
-                                                                                         source: source, password: nil)
-        let root = try #require(lease?.root)
-        if let cleaned = acl_get_file(root.path, ACL_TYPE_EXTENDED) {
-            defer { acl_free(UnsafeMutableRawPointer(cleaned)) }
-            var remaining: acl_entry_t?
-            #expect(acl_get_entry(cleaned, ACL_FIRST_ENTRY.rawValue, &remaining) != 0)
-        } else { #expect(errno == ENOATTR || errno == ENOENT) }
-        lease = nil
-        #expect(tree.snapshot() == ["cache/", "outside/", "outside/keep", "pack.tar"])
-    }
-}
-
-extension PreviewArchiveTests {
-    @Test func encryptedSevenZipHeadersReportUnsupportedEncryptionWithoutAskingForPasswords() async throws {
+    @Test func encryptedSevenZipHeadersReportUnsupportedEncryption() async throws {
         let tree = try TestTree("encrypted.7z", "sibling")
         // libarchive 3.7.4 test_read_format_7zip_encryption_header.7z, BSD-2-Clause.
         // Copyright (c) 2013 Konrad Kleine. See THIRD_PARTY_NOTICES.md for the license.
         let bytes = try #require(Data(base64Encoded: "N3q8ryccAANRIXJ9gAAAAAAAAAAmAAAAAAAAABpax2mOWrqfd7a1ZaNBMYhQiWvQGsnBfkkay/HQXBOBu2bPs5JKmpm341p7Jd0wnGCbVjFcomL/ZlXY03qBVxd6mIOYY9Q5Tc1UwpeKFzLslyn3LOkF4rKHeVOmxeXUqu9CFAVF00x7gs+D622Asq0Cc25+Dpc1cvDJXakl4KDJRM9kxhcGEAEJcAAHCwEAASQG8QcBClMHTxry5UUdLtIMYQoB+2PQJgAA"))
         try bytes.write(to: tree.url("encrypted.7z"))
-        let access = PreviewArchiveAccess()
-        access.reset(try FileReadSource(tree.url("encrypted.7z")))
-        var prompts = 0
-        access.requestPassword = { _ in prompts += 1; return "12345678" }
-        await #expect(throws: ArchiveReadError.encryption) { try await access.read() }
-        #expect(prompts == 0)
+        await #expect(throws: ArchiveReadError.encryption) { try await ArchiveReader.read(FileReadSource(tree.url("encrypted.7z"))) }
         #expect(tree.snapshot() == ["encrypted.7z", "sibling"])
     }
 }
 
 
 extension PreviewArchiveTests {
-    @Test func aNewClipboardChoiceIsNotReplacedByAnOlderArchiveCopy() async throws {
-        let tree = try TestTree("encrypted.zip", "outside/keep")
-        try #require(Data(base64Encoded: Self.encryptedZIP)).write(to: tree.url("encrypted.zip"))
-        let environment = try PreviewEnvironment(tree)
-        let browser = BrowserViewController(services: environment.services)
-        _ = browser.view
-        let coordinator = environment.services.previews
-        coordinator.show(try #require(FileEntry(url: tree.url("encrypted.zip"))), from: browser, present: false)
-        let content = try #require(coordinator.content)
-        await content.session.task?.value
-        var answer: CheckedContinuation<String?, Never>?
-        let (started, signal) = AsyncStream<Void>.makeStream()
-        defer { answer?.resume(returning: nil); signal.finish(); coordinator.close() }
-        content.session.archiveAccess.requestPassword = { _ in
-            await withCheckedContinuation { answer = $0; signal.yield(()) }
-        }
-        let item = try #require(content.session.roots.first)
-        content.session.select(item)
-        coordinator.perform(.copy, target: try #require(PreviewCommandTarget(session: content.session)))
-        let task = try #require(content.archiveContent.commandTask)
-        var iterator = started.makeAsyncIterator()
-        _ = await iterator.next()
-        environment.pasteboard.clearContents()
-        environment.pasteboard.setString("a newer copy", forType: .string)
-        let continuation = answer
-        answer = nil
-        continuation?.resume(returning: "preview-test")
-        await task.value
-        #expect(environment.pasteboard.string(forType: .string) == "a newer copy")
-        #expect(environment.services.clipboard.read().urls.isEmpty)
-        #expect(content.session.selected?.name == "note.txt")
-        coordinator.close()
-        #expect(tree.snapshot().filter { !$0.hasPrefix("environment/") } == ["encrypted.zip", "outside/", "outside/keep"])
-        withExtendedLifetime(environment) {}
-    }
-
-    @Test func replacedStagedLeafSurvivesCleanupInsideItsStillOwnedFolder() async throws {
-        let tree = try TestTree("pack.tar", "outside/keep")
-        try Data(ContainerTests.tarFile("a/note", "owned")+[UInt8](repeating: 0, count: 1024)).write(to: tree.url("pack.tar"))
-        let source = try FileReadSource(tree.url("pack.tar"))
-        let records = try await ArchiveReader.read(source, member: ["a"], directory: true)
-        var lease: PreviewArchiveLease? = try await PreviewArchiveLease.materialize(records, member: ["a"], in: tree.url("cache"), source: source)
-        let note = try #require(lease?.url).appendingPathComponent("note")
-        try FileManager.default.moveItem(at: note, to: tree.url("parked"))
-        try Data("replacement".utf8).write(to: note)
-        let before = tree.snapshot()
-        lease = nil
-        #expect(tree.snapshot() == before && tree.text("parked") == "owned" && tree.text("outside/keep") == "outside/keep")
-        #expect(try String(contentsOf: note, encoding: .utf8) == "replacement")
-    }
-
     @Test func theParentProtocolParserRefusesEscapesOutOfScopeDataAndUnrepresentableDates() throws {
         func frame(_ path: Data, size: UInt64 = 1, seconds: UInt64 = 0, payload: Data = Data([1])) -> Data {
             var result = Data("SAP1".utf8)

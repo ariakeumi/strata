@@ -51,8 +51,9 @@ import Testing
     @Test func savedDisplayModePrecedesNativeItemsAndTheSavedLayoutSurvivesAttachment() async throws {
         let tree = try TestTree("left/")
         let environment = try IndependentEnvironment()
-        let layout: [NSToolbarItem.Identifier] = [.toggleSidebar, .flexibleSpace, .search]
-        environment.preferences.toolbarItems = layout.map(\.rawValue)
+        let layout: [NSToolbarItem.Identifier] = [.toggleSidebar, .init("sidebarMode"), .flexibleSpace, .search]
+        let storedLayout = layout.map(\.rawValue)
+        environment.preferences.toolbarItems = storedLayout
         environment.preferences.toolbarDisplayMode = Int(NSToolbar.DisplayMode.iconAndLabel.rawValue)
         let additions = Additions(environment.preferences.domainName + ".main")
         defer { additions.stop() }
@@ -64,8 +65,9 @@ import Testing
         let items = additions.items
         #expect(!items.isEmpty)
         #expect(items.allSatisfy { $0.mode == NSToolbar.DisplayMode.iconAndLabel.rawValue })
-        #expect(owner.window?.toolbar?.itemIdentifiers == layout)
-        #expect(environment.preferences.toolbarItems == layout.map(\.rawValue))
+        #expect(items.allSatisfy { $0.id != NSToolbarItem.Identifier.toggleSidebar.rawValue && $0.id != "sidebarMode" })
+        #expect(owner.window?.toolbar?.itemIdentifiers == [.flexibleSpace, .search])
+        #expect(environment.preferences.toolbarItems == storedLayout)
         withExtendedLifetime(environment) {}
         #expect(tree.snapshot() == ["left/"])
     }

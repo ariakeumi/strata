@@ -405,9 +405,8 @@ int strata_archive_preview_worker(uint64_t lowered_cpu_limit, uint64_t lowered_m
     const int setup = strata_read_worker_start(cpu, memory);
     if (setup) return setup;
     unsigned char request[10];
-    if (!exact_read(0, request, sizeof(request)) || request[0] > strata_archive_stream || request[1] > 1 ||
-        (request[0] == strata_archive_unpack) != (unpacking != 0) ||
-        (request[0] == strata_archive_stream && request[1])) {
+    if (!exact_read(0, request, sizeof(request)) || request[0] > strata_archive_unpack || request[1] > 1 ||
+        (request[0] == strata_archive_unpack) != (unpacking != 0)) {
         return strata_archive_unreadable;
     }
     uint32_t path_length = read32(request+2), password_length = read32(request+6);
@@ -415,8 +414,7 @@ int strata_archive_preview_worker(uint64_t lowered_cpu_limit, uint64_t lowered_m
     char selected[4097] = {0}, password[1025] = {0};
     if (!exact_read(0, selected, path_length) || !exact_read(0, password, password_length) ||
         memchr(selected, 0, path_length) || memchr(password, 0, password_length)) return strata_archive_unreadable;
-    const int streaming = request[0] == strata_archive_stream;
-    const int extracting = request[0] == strata_archive_extract || streaming;
+    const int extracting = request[0] == strata_archive_extract;
     const int surveying = request[0] == strata_archive_survey;
     const int folder = request[1];
     if (extracting && !valid_path(selected, path_length)) return strata_archive_unsafe;
@@ -451,7 +449,6 @@ int strata_archive_preview_worker(uint64_t lowered_cpu_limit, uint64_t lowered_m
     if (unpacking) { result = unpack(a, status, entry); goto done; }
     if (!emit("SAP1", 4)) goto done;
     uint64_t output = 4;
-    const uint64_t output_limit = streaming ? strata_archive_file_limit : strata_archive_byte_limit;
     unsigned headers = 0, matched = 0;
     /* A listing stops at its limits with what it has listed, and its end mark says there is more; a copy over them is
      * refused. */
@@ -495,12 +492,12 @@ int strata_archive_preview_worker(uint64_t lowered_cpu_limit, uint64_t lowered_m
         /* Read without Mac metadata, an item's resource fork and attributes stay in their own "._" entry. */
         if (extracting && (plain || needs_full_extraction(entry))) { result = strata_archive_needs_extraction; goto done; }
         int64_t size = kind == 1 ? archive_entry_size(entry) : 0;
-        if (size < 0 || (extracting && (uint64_t)size > output_limit-output)) {
+        if (size < 0 || (extracting && (uint64_t)size > strata_archive_byte_limit-output)) {
             result = strata_archive_limit;
             goto done;
         }
         output += 21+raw_length+(extracting ? (uint64_t)size : 0);
-        if (output > output_limit) {
+        if (output > strata_archive_byte_limit) {
             if (extracting) { result = strata_archive_limit; goto done; }
             end = strata_archive_end_more;
             break;

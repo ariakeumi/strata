@@ -36,7 +36,6 @@ extension NSUserInterfaceItemIdentifier {
     static let location = Self("location")
     static let nameCell = Self("NameCell")
     static let textCell = Self("TextCell")
-    static let groupCell = Self("GroupCell")
 }
 
 final class BrowserViewController: NSViewController {
@@ -156,6 +155,7 @@ final class BrowserViewController: NSViewController {
     /// Showing search results or Recents instead of a folder's contents.
     var isShowingResults: Bool { ordering.isShowingResults }
     let results = PaneResults()
+    var smbShares: SMBSharePage?
     /// How the folder is presented; results keep their own presentation choice.
     private(set) var mode: BrowserViewMode
     private(set) var iconSize: Double
@@ -179,10 +179,6 @@ final class BrowserViewController: NSViewController {
     func openEntries(_ entries: [FileEntry]) { open(entries) }
     func contextMenu() -> NSMenu { makeContextMenu() }
     func moveOrCopy(_ urls: [URL], into target: URL, move: Bool) { transfer(urls, into: target, move: move) }
-
-    isolated deinit {
-        services.previews.invalidate(owner: self)
-    }
 
     // MARK: - View
 
@@ -225,8 +221,6 @@ final class BrowserViewController: NSViewController {
         preferences.notifications.addObserver(self, selector: #selector(viewOptionsChanged), name: .viewOptionsChanged, object: nil)
         preferences.notifications.addObserver(self, selector: #selector(folderViewSettingsChanged(_:)), name: .folderViewSettingsChanged, object: preferences)
         services.clipboard.notifications.addObserver(self, selector: #selector(clipboardChanged), name: .clipboardChanged, object: services.clipboard)
-        NotificationCenter.default.addObserver(self, selector: #selector(indexChanged), name: .indexDidChange, object: services.index)
-        NotificationCenter.default.addObserver(self, selector: #selector(gitStatusChanged), name: .gitStatusDidChange, object: services.git)
         NotificationCenter.default.addObserver(self, selector: #selector(tagsChanged), name: .tagsChanged, object: services.tags)
         NotificationCenter.default.addObserver(self, selector: #selector(containerFilesFetched(_:)), name: .containerFilesFetched, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(containersChanged), name: .containersChanged, object: services.containerStore)
@@ -309,7 +303,7 @@ final class BrowserViewController: NSViewController {
         ov.onEscape = { [weak self] in self?.handle(.escape) ?? false }
         ov.onReturn = { [weak self] in _ = self?.handle(.returnKey) }
         ov.onNameClick = { [weak self] row in
-            guard let self, let node = outlineView.item(atRow: row) as? FileNode, node.groupTitle == nil else { return }
+            guard let self, let node = outlineView.item(atRow: row) as? FileNode else { return }
             renameClicked(node.url)
         }
         ov.onSpace = { [weak self] in _ = self?.handle(.space) }
@@ -401,10 +395,6 @@ final class BrowserViewController: NSViewController {
     func refresh(invalidateCopy: Bool) {
         guard directory != nil, !isShowingResults else { return }
         services.tags.invalidate(directory)
-        // FSEvents normally keeps git status current; without it, entries changing is our cue.
-        if let observation = watching.git, !observation.isWatching {
-            services.git.invalidate(root: observation.repository.root)
-        }
         reload(scrollToTop: false, invalidateCopy: invalidateCopy)
     }
 
@@ -420,7 +410,7 @@ final class BrowserViewController: NSViewController {
                 let generation = generation
                 settle(at: delivery.folder, asked: url, landed: delivery.landed)
                 guard self.generation == generation else { return }
-                if Privacy.markAccessible(delivery.folder) { services.index.refreshConfig() }
+                Privacy.markAccessible(delivery.folder)
                 guard self.generation == generation else { return }
                 apply(delivery.entries, preservingState: !delivery.fromTop, fromTop: delivery.fromTop,
                       sortedBy: delivery.sortedBy, complete: delivery.complete, progressive: delivery.progressive)
@@ -459,10 +449,9 @@ final class BrowserViewController: NSViewController {
         }
     }
 
-    /// Watches `folder` (both Applications folders for Applications), and finds its repository, away from the main
-    /// thread: the watchers are open when the task it returns ends.
+    /// Opens the folder’s watchers off the main thread, including both Applications folders when applicable.
     private func watch(_ folder: URL) -> Task<Void, Never> {
-        watching.watch(applicationFolders.directories(for: folder), repositoryOf: folder, in: services.git,
+        watching.watch(applicationFolders.directories(for: folder), folder: folder,
                        changed: { [weak self] in self?.refresh() },
                        isCurrent: { [weak self] in self?.directory == folder })
     }
@@ -571,11 +560,6 @@ final class BrowserViewController: NSViewController {
     /// reached through a symlink doesn't spell them like the folder does ("/tmp/x" lists "/private/tmp/x/a").
     func rowURL(_ url: URL) -> URL { node(for: url)?.url ?? url }
 
-    /// What Quick Look shows of a selection: its files, and links (a link to a folder previews as the link).
-    static func quickLookItems(_ entries: [FileEntry]) -> [URL] {
-        entries.filter { !$0.isDirectory || $0.isSymlink }.map(\.url)
-    }
-
     private func showLoadError() {
         folderOptions?.refresh()
         cancelPendingActions()
@@ -612,7 +596,7 @@ final class BrowserViewController: NSViewController {
                 emptyState.show(symbol: "exclamationmark.triangle", title: String(localized: "Couldn’t open this folder"), message: error.localizedDescription)
             }
         } else if isLoaded && rows.isEmpty {
-            if isShowingResults && filter.isEmpty {
+            if isShowingResults && smbShares == nil && filter.isEmpty {
                 emptyState.show(symbol: "magnifyingglass", title: String(localized: "No Results"))
             } else if filter.isEmpty {
                 emptyState.show(symbol: "folder", title: String(localized: "Empty Folder", comment: "Shown in place of the files of a folder that has none"))
@@ -651,7 +635,6 @@ final class BrowserViewController: NSViewController {
 
     func noteNavigationContextChanged() {
         navigationRevision += 1
-        services.previews.invalidate(owner: self)
         fetches.cancelAction()
     }
 
@@ -674,7 +657,7 @@ final class BrowserViewController: NSViewController {
         let appliedGeneration = generation
         // Metadata that arrived while filtered (sizes, say) orders the rows now.
         if text.isEmpty { scheduleResort() }
-        let selection = preservingSelection ? (pending.selection ?? selectedURLs) : []
+        let selection = preservingSelection ? (pending.selection ?? presentationSelection.map(\.url)) : []
         let requestedSelection = preservingSelection && pending.selection != nil
         let wasApplying = isApplyingListing
         if preservingSelection { isApplyingListing = true }
@@ -682,9 +665,9 @@ final class BrowserViewController: NSViewController {
         let viewport = preservingSelection ? TableViewport.capture(outlineView) { ($0 as? FileNode)?.entry.locationKey } : nil
         outlineView.reloadData()
         guard generation == appliedGeneration else { return }
-        if !preservingSelection, let firstRow = (0..<outlineView.numberOfRows).first(where: { (outlineView.item(atRow: $0) as? FileNode)?.groupTitle == nil }) {
-            outlineView.selectRowIndexes([firstRow], byExtendingSelection: false)
-            outlineView.scrollRowToVisible(firstRow)
+        if !preservingSelection, outlineView.numberOfRows > 0 {
+            outlineView.selectRowIndexes([0], byExtendingSelection: false)
+            outlineView.scrollRowToVisible(0)
         }
         filterPill.update(query: text, matches: rows.count)
         pushContent()
@@ -696,7 +679,7 @@ final class BrowserViewController: NSViewController {
             if !loading.hasPartialListing || pending.selection?.allSatisfy({ node(for: $0) != nil }) == true { pending.selection = nil }
             beginPendingRename()
             viewport?.restore(in: outlineView) { key in listing.node(forKey: key).map { outlineView.row(forItem: $0) } }
-        } else if let first = rows.first(where: { $0.groupTitle == nil }), activeView != nil { activeView?.select([first.url], scroll: true) }
+        } else if let first = rows.first, activeView != nil { activeView?.select([first.url], scroll: true) }
         updateEmptyState()
         delegate?.browserContentDidChange(self)
     }
@@ -711,7 +694,7 @@ final class BrowserViewController: NSViewController {
         guard ordering.choice != nil, filtering.typed.isEmpty else { return }
         if inlineRename.isEditing { return resorting.holdForEditing() }
         if ordering.choice?.key == .tags { columnController?.resortLoadedColumns() }
-        let selection = selectedURLs
+        let selection = presentationSelection.map(\.url)
         var sorted = nodes
         let changedParents = ordering.sort(&sorted)
         if changedParents.isEmpty, sorted.elementsEqual(rows, by: { $0 === $1 }) { return }
@@ -781,38 +764,29 @@ final class BrowserViewController: NSViewController {
     // MARK: - Selection
 
     private var selectedNodes: [FileNode] {
-        outlineView.selectedRowIndexes.compactMap { outlineView.item(atRow: $0) as? FileNode }.filter { $0.groupTitle == nil }
+        outlineView.selectedRowIndexes.compactMap { outlineView.item(atRow: $0) as? FileNode }
     }
 
-    /// The selection in whichever presentation is active.
-    var selectedEntries: [FileEntry] { activeView?.selectedEntries ?? selectedNodes.map(\.entry) }
+    var presentationSelection: [FileEntry] { activeView?.selectedEntries ?? selectedNodes.map(\.entry) }
+    var selectedEntries: [FileEntry] {
+        guard smbShares == nil else { return [] }
+        return presentationSelection.filter { $0.url.isFileURL }
+    }
+    var onReloadResults: (() -> Void)?
+    var canReloadResults: Bool { onReloadResults != nil }
+
     var selectedURLs: [URL] { selectedEntries.map(\.url) }
     var itemCount: Int { nodes.count }
-    var topLevelEntries: [FileEntry] { nodes.map(\.entry) }
+    var topLevelEntries: [FileEntry] { smbShares == nil ? nodes.map(\.entry) : [] }
 
-    /// Cached size of a folder; with `request`, starts measuring it when outside the index, unknown and allowed.
-    /// `asker`: who asked for this size (the Inspector, Disk Usage), so the walk fetches what is only in the cloud,
-    /// and is not stopped because the index took the folder over meanwhile.
+    /// Uses the last measured size or starts an eligible walk on request. Explicit requests may fetch cloud items.
     func folderSize(_ url: URL, request: Bool = false, askedBy asker: FolderSizer.Asker? = nil) -> FolderSize? {
         if services.copies.contains(url) { return nil }
         if let entry = node(for: url)?.entry, !entry.isDirectory || entry.isSymlink || entry.isVolume { return nil }
-        switch services.index.folderSizeLookup(url) {
-        case .indexed(let total):
-            // What the index has not read of the folder is not in its total. A size you asked for is of everything,
-            // and stands until the index has read it all.
-            if total.allocationComplete { FolderSizer.indexHoldsAll(of: url) }
-            if sizer.hasPending { sizer.cancel(url) }
-            return FolderSizer.shown(indexed: total, asked: FolderSizer.askedSize(url))
-        case .pending:
-            if let whole = FolderSizer.askedSize(url) { return whole }
-            if sizer.hasPending { sizer.cancel(url) }
-            return nil
-        case .unindexed:
-            if let size = FolderSizer.cached(url, asked: asker != nil) { return size }
-            if request, !Privacy.measuringWouldPrompt(url, browsing: directory ?? url),
-               !Privacy.walkingWouldReachGuardedFolders(url) { sizer.request(url, askedBy: asker) }
-            return nil
-        }
+        if let size = FolderSizer.cached(url, asked: asker != nil) { return size }
+        if request, !Privacy.measuringWouldPrompt(url, browsing: directory ?? url),
+           !Privacy.walkingWouldReachGuardedFolders(url) { sizer.request(url, askedBy: asker) }
+        return nil
     }
 
     /// The size rows sorted by size are ordered by: the one the row shows, and none where it shows none, as for a
@@ -821,14 +795,8 @@ final class BrowserViewController: NSViewController {
         showsSize(entry) ? folderSize(entry.url)?.bytes : nil
     }
 
-    /// The sizes of the folders in `folder` that the index answers for, as `folderSize` gives each: sorting by size
-    /// orders rows by what they show.
     func childFolderSizes(_ folder: URL) -> [String: Int64] {
-        var sizes = services.index.childFolderSizes(folder)
-        for (path, asked) in FolderSizer.askedSizes(in: folder) {
-            sizes[path] = sizes[path].map { FolderSizer.shown(indexed: $0, asked: asked) }
-        }
-        return sizes.mapValues(\.bytes)
+        folder.isFileURL ? FolderSizer.askedSizes(in: folder).mapValues(\.bytes) : [:]
     }
 
     /// The Inspector shows `urls` now. A size it asked for before, of something it shows no more, is measured no
@@ -855,7 +823,7 @@ final class BrowserViewController: NSViewController {
     var statusText: String {
         guard isLoaded, loadError == nil || loading.hasPartialListing else { return "" }
         var parts: [String]
-        if isShowingResults {
+        if isShowingResults && smbShares == nil {
             parts = results.status(shown: filter.isEmpty ? nodes.count : rows.count)
         } else {
             parts = [filter.isEmpty
@@ -866,8 +834,10 @@ final class BrowserViewController: NSViewController {
             parts.insert(String(localized: "Loaded"), at: 0)
             parts.append(loadError == nil ? String(localized: "Loading…") : String(localized: "Listing incomplete"))
         }
-        let selected = selectedEntries
-        if !selected.isEmpty {
+        let selected = presentationSelection
+        if smbShares != nil, !selected.isEmpty {
+            parts.append(String(localized: "\(selected.count) selected", comment: "plural"))
+        } else if !selected.isEmpty {
             let sizes = selected.map { $0.isDirectory ? folderSize($0.url)?.bytes : $0.size }
             let known = sizes.compactMap { $0 }
             parts.append(known.count == sizes.count

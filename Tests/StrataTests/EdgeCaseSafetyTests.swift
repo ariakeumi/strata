@@ -8,7 +8,6 @@ import Testing
 @testable import StrataFiles
 @testable import StrataQueue
 @testable import StrataSearch
-@testable import StrataIndex
 @testable import StrataModel
 @testable import StrataPreviews
 @testable import StrataSupport
@@ -51,20 +50,6 @@ struct EdgeCaseSafetyTests {
         #expect(single.kept.count == 1 && single.kept[0].count == 100)
     }
 
-    @Test func halfPrecisionEncodingHandlesEmptyVectors() {
-        let encoded = Half.encode([])
-        #expect(encoded.isEmpty)
-        let roundTrip = Half.encode([1.5, -2.0])
-        #expect(roundTrip.count == 2)
-        var decoded = [Float](repeating: 0, count: 2)
-        roundTrip.withUnsafeBufferPointer { buffer in
-            decoded.withUnsafeMutableBufferPointer { out in
-                Half.decode(buffer, into: out.baseAddress!)
-            }
-        }
-        #expect(decoded == [1.5, -2.0])
-    }
-
     @Test func streamDemuxRejectsOversizeFrameHeaderBeforeBufferingPayload() {
         var demux = StreamDemux(outputLimit: 1024, errorLimit: 1024)
         let hugeHeader = Data([1, 0, 0, 0, 0x7F, 0xFF, 0xFF, 0xFF])
@@ -105,7 +90,7 @@ struct EdgeCaseSafetyTests {
         #expect(tree.snapshot() == ["a.txt", "b.txt"])
     }
 
-    @Test func namedPipesDoNotBlockInspectorGitProjectOrDelimitedReaders() async throws {
+    @Test func namedPipesDoNotBlockInspectorProjectOrDelimitedReaders() async throws {
         let tree = try TestTree("kept.txt")
         let fifo = tree.url("compose.yaml")
         try #require(mkfifo(fifo.path, 0o600) == 0)
@@ -151,38 +136,6 @@ struct EdgeCaseSafetyTests {
         #expect(tree.snapshot() == ["a.txt"])
     }
 
-    @Test func indexStoreAndDuplicateFinderSaturateInsteadOfOverflowing() {
-        let group = DuplicateGroup(size: Int64.max, paths: ["/a", "/b", "/c"])
-        #expect(group.reclaimable == Int64.max)
-
-        let store = IndexStore()
-        store.write { store in
-            let root = store.addRoot(path: "/synthetic", mtime: 0)
-            let names = Array("a\0b".utf8)
-            let items = [
-                ScannedItem(nameOffset: 0, nameLength: 1, isDirectory: false, isPackage: false, isSymlink: false,
-                            isHidden: false, isMountPoint: false, size: Int64.max - 10, mtime: 0),
-                ScannedItem(nameOffset: 2, nameLength: 1, isDirectory: false, isPackage: false, isSymlink: false,
-                            isHidden: false, isMountPoint: false, size: 100, mtime: 0),
-            ]
-            _ = names.withUnsafeBytes { store.appendChildren(items, nameBuffer: $0, of: root) }
-            store.aggregate()
-            #expect(store.size[Int(root)] == Int64.max)
-            #expect(store.fileCount[Int(root)] == 2)
-            let emptyRoot = store.addRoot(path: "", mtime: 0)
-            let emptyMatch = store.nameEquals(emptyRoot, [])
-            let nonEmptyMatch = store.nameEquals(root, [])
-            #expect(emptyMatch)
-            #expect(!nonEmptyMatch)
-        }
-
-        var emptyTermQuery = IndexQuery()
-        emptyTermQuery.terms = [[]]
-        let result = IndexSearch.run(emptyTermQuery, in: store, limit: 10)
-        #expect(result.hits.isEmpty)
-        #expect(result.total == 0)
-    }
-
     @Test func planExpanderRenderHandlesCombiningMarkExtensionsAndNonPositiveTextLimits() throws {
         let combiningItem = PlanItem(
             url: URL(fileURLWithPath: "/tmp/a.\u{0301}"),
@@ -213,21 +166,10 @@ struct EdgeCaseSafetyTests {
         _ = TransferRing.Key(progress: .infinity, hasFailures: false)
     }
 
-    @Test func duplicateFinderAndArchiveListerSkipNamedPipesAndOversizeExtensionsSafely() async throws {
+    @Test func archiveListerAndFileNamesHandleNamedPipesAndOversizeExtensionsSafely() async throws {
         let tree = try TestTree("regular.txt")
         let fifoA = tree.url("pipe-a.tar")
-        let fifoB = tree.url("pipe-b.tar")
         try #require(mkfifo(fifoA.path, 0o600) == 0)
-        try #require(mkfifo(fifoB.path, 0o600) == 0)
-
-        let groups = DuplicateFinder.find([
-            [],
-            [
-                (path: fifoA.path, size: 8192),
-                (path: fifoB.path, size: 8192),
-            ],
-        ], progress: { _, _ in }, isCancelled: { false })
-        #expect(groups.isEmpty)
 
         await #expect(throws: (any Error).self) {
             _ = try await ArchiveLister.list(fifoA, kind: .tar)
@@ -369,7 +311,7 @@ struct EdgeCaseSafetyTests {
         #expect(tree.snapshot() == ["long.json"])
     }
 
-    @Test func duplicateFinderAndFolderCompareVerifyOnDiskRegularFilesAndSizes() throws {
+    @Test func folderCompareVerifiesOnDiskRegularFilesAndSizes() throws {
         let tree = try TestTree("a.txt", "b.txt", "link -> a.txt")
         let a = tree.url("a.txt")
         let b = tree.url("b.txt")
@@ -377,18 +319,13 @@ struct EdgeCaseSafetyTests {
         try Data("same-prefix-0123456789".utf8).write(to: a)
         try Data("same-prefix-0123456789-appended-later".utf8).write(to: b)
 
-        // If `b.txt` grew after indexing, DuplicateFinder must not group it with `a.txt` under the stale 22-byte size.
-        let staleCandidates: [[(path: String, size: Int64)]] = [[(a.path, 22), (b.path, 22)]]
-        let groups = DuplicateFinder.find(staleCandidates, progress: { _, _ in }, isCancelled: { false })
-        #expect(groups.isEmpty)
-
         let control = FolderCompare.Control()
         #expect(!FolderCompare.sameBytes(a, b, control: control))
         #expect(!FolderCompare.sameBytes(a, link, control: control))
         try Data("same-prefix-0123456789".utf8).write(to: b)
         #expect(FolderCompare.sameBytes(a, b, control: control))
 
-        let q1 = IndexQuery.parse("size:<nanmb modified:<nand size:>-5mb")
+        let q1 = SearchQuery.parse("size:<nanmb modified:<nand size:>-5mb")
         #expect(q1.maxSize == nil)
         #expect(q1.minSize == nil)
         #expect(q1.modifiedAfter == nil)

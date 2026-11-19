@@ -35,9 +35,8 @@ package enum Privacy {
 
     private static let accessibleKey = "accessibleProtectedFolders"
 
-    /// Remembers that a protected folder (e.g. Documents) was opened successfully, so it may be indexed and measured
+    /// Remembers that a protected folder (e.g. Documents) was opened successfully, so it can be searched or measured
     /// without another prompt.
-    /// Whether this made one of them known: what the index may read has changed then.
     @discardableResult
     package static func markAccessible(_ url: URL) -> Bool {
         let path = url.lexicallyStandardized.path
@@ -66,6 +65,14 @@ package enum Privacy {
         return ["Desktop", "Documents", "Downloads", "Pictures", "Music", "Movies", "Library",
                 "Library/Containers", "Library/Group Containers", "Library/Mobile Documents"]
             .map { home + "/" + $0 } + ["/Volumes"]
+    }
+
+    /// Descendant folders an on-demand search must pass over to avoid consent prompts.
+    package static func searchExclusions(in folder: URL) -> Set<String> {
+        guard !hasFullDiskAccess else { return [] }
+        let root = PathSpelling.short(folder)
+        let prefix = root == "/" ? root : root + "/"
+        return Set(guardedRoots.filter { $0.hasPrefix(prefix) && !isKnownAccessible($0) })
     }
 
     /// Whether walking `url` to measure it could trigger a prompt. Inside a guarded folder you've already opened,

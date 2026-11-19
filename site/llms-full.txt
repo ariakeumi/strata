@@ -1,13 +1,12 @@
 # Strata Files
 
-> Strata is a free, open-source (MIT) file manager for macOS, built natively in Swift and AppKit. It keeps what people know from Finder (the look, the shortcuts, drag and drop, Quick Look, tabs) and adds instant search, live folder sizes, a disk-usage map, Quick Look browsing for folders and archives, a command palette, dual pane with folder compare and sync, a copy queue, undoable history, Finder tags, archives you can browse like folders, batch rename, developer features and on-device summaries. It comes in 22 languages and runs entirely on the Mac.
+> Strata is a free, open-source (MIT) file manager for macOS, built natively in Swift and AppKit. It keeps what people know from Finder (the look, the shortcuts, drag and drop, Quick Look, tabs) and adds instant search, live folder sizes, a disk-usage map, a command palette, dual pane with folder compare and sync, a copy queue, undoable history, Finder tags, archives you can browse like folders, batch rename, developer features and on-device summaries. It comes in 22 languages and runs entirely on the Mac.
 
 - Website: https://stratafiles.app
 - Download: https://github.com/cristipufu/strata-files/releases/latest (Strata.dmg or Strata.zip, signed with a Developer ID and notarized by Apple; SHA256SUMS.txt lists checksums)
 - Source: https://github.com/cristipufu/strata-files
 - Requirements: macOS 26 Tahoe on a Mac with Apple silicon. Apple Intelligence is optional; without it, summaries use a document's key sentences and Ask Strata uses built-in rules.
 - Price: free. License: MIT.
-- Updates: Strata updates itself (Strata ▸ Check for Updates…, or automatically if allowed in Settings ▸ General). Updates and the update feed are signed with Strata's key and verified before anything is installed. New versions are published on GitHub Releases.
 - Languages: English, German, French, Spanish, Italian, Portuguese (Brazil and Portugal), Dutch, Swedish, Danish, Norwegian, Polish, Czech, Hungarian, Romanian, Russian, Ukrainian, Turkish, Japanese, Korean, Chinese (Simplified and Traditional). It follows the Mac's language or the one picked in Settings ▸ General; translations are plain JSON files, one per language, open to contributions.
 
 ## Search
@@ -36,40 +35,33 @@ Filters can be combined with words:
 - Search box in the Dock (Settings ▸ General, off by default): a search box in the Dock next to Strata's icon, like the one on the Windows taskbar. It finds what ⌘K finds, plus apps and documents by their content, from any app. Strata keeps a few empty tiles in the Dock for it and needs Accessibility access to place it.
 - Type a path (⌘L) with Tab completion and folder suggestions as you type (a path, `github/acme`, or a folder's name anywhere); Go to Folder (⇧⌘G).
 - Type in any folder to filter it (fuzzy); Return opens the top match, Esc clears the filter.
-- Five views, one keystroke apart like Finder: Icons (⌘1), List (⌘2), Columns (⌘3), Gallery (⌘4), Disk Usage (⌘5).
+- Five views, one keystroke apart like Finder: Icons (⌃⌘1), List (⌃⌘2), Columns (⌃⌘3), Gallery (⌃⌘4), Disk Usage (⌃⌘5).
 - Dual Pane (⌘\): two folders side by side; copy or move between them with a keystroke. Compare with Other Pane lists what's only on one side, newer or different, then syncs both ways, one way or as a mirror (verified and undoable).
 - Spring-loaded folders: hold a drag over a folder and it opens.
 - Connect to Server (⌥⌘K): SMB, AFP, NFS and WebDAV shares, with macOS's own login and the Keychain.
 - Servers: SFTP servers (through the Mac's own ssh and ~/.ssh/config: keys, agent, ProxyJump) and S3 buckets (Amazon S3 or S3-compatible, the secret key in the Keychain) browse like folders: every view, Quick Look, copy or drag out, drop or paste files in, new files and folders, rename, delete (asks first), moves within a server, Open in Terminal over ssh. Files are read as you browse and cleared when Strata quits.
 - iCloud Drive and cloud folders (Dropbox, OneDrive, Google Drive…): see what's only in the cloud or still syncing, with Download Now and Remove Download.
 - Tabs, Workspaces (a saved set of tabs and panes with their views; in the sidebar, ⌘K and `strata -w <name>`; folders on shares and servers connect again), and windows that reopen where you left them.
-- Sidebar: Favorites you can drag in and reorder, frequent folders, workspaces, servers, Large Files, Duplicates, disks with Eject, the Trash and Finder tags; or a folder tree (Home, disks, servers, containers, then the Trash) that follows the folder you're in.
+- Sidebar: Favorites you can drag in and reorder, frequent folders, workspaces, servers, disks with Eject, the Trash and Finder tags; or a folder tree (Home, disks, servers, containers, then the Trash) that follows the folder you're in.
 - ⌘+ and ⌘− change icon size in Icons and the text size in List and Columns.
 - Recents: files changed in the last 7 days across the home folder.
 - Shelf: collect files from anywhere, then drop them all at once.
 - Settings ▸ "Open Reveal in Finder in Strata": apps that show files in Finder open Strata instead.
 
-## Color themes
+## Appearance
 
-Settings ▸ Appearance ▸ Color theme offers System (the Mac’s own colors) and seventeen presets: Graphite, Blue, Green, Purple, Sand, Teal, Rose, Amber, Slate, Sage, Coral, Plum, Ice, Midnight, Catppuccin, Dracula and Tokyo Night. Each preset has a light and dark palette, with coordinated colors across file views, the sidebar, inspector, toolbar and secondary windows. Controls and behavior remain native macOS. Turn Window tint off to keep native backgrounds while using the palette for selections and accents. Row density and file name size are also adjustable.
+Strata uses native macOS colors. Settings ▸ Appearance lets you match the system or choose Light or Dark, and lets you adjust row density and file name size.
 
 ## Space
 
 - Folder sizes appear as soon as a folder opens and stay current as files change.
 - Disk Usage shows a folder as a map sized by its contents, with a legend by kind.
-- Large Files and Duplicates find what to clean up.
 
 ## Quick Look
 
-- Press Space on a folder or archive to browse its contents in a separate native window, with the selected file previewed alongside. The originating browser keeps its folder, selection and view. Escape or Space closes the preview.
-- Use List with expandable folders or Icons with thumbnails and an icon-size slider. Filter the loaded contents, sort by Name, Kind, Date Modified or Size, and browse nested folders without navigating the main window.
-- Archives list their contents without extracting the whole archive. Selecting a supported member previews just that file; Open and Copy are explicit actions. Encrypted archives ask for a password when needed.
-- Preview photos, documents, code, Markdown, HTML, JSON, CSV and SQLite databases. HTML has Preview and Source modes; scripts and online content are blocked. Open in Browser explicitly opens the original HTML file externally.
-- Open, Show in Strata, Copy and Copy Path act on the chosen item. Size reporting distinguishes logical bytes from allocated disk space; Calculate Size explicitly starts a cancellable folder measurement.
-- Server and container folders use metadata-only listings. Supported files are fetched individually when selected, rather than downloading a whole folder to open its preview.
-- The window remembers manual resizing, divider proportions and metadata column widths, fits the current display, and follows Strata's theme. Single-file previews use the full window while keeping the folder split for later.
-
-- Books and comics: EPUB and CBZ/CBR/CB7/CBT cover thumbnails; Space browses comic pages in a contact sheet; EPUB chapters preview offline in Quick Look and the inspector. Search kinds: `kind:book` / `kind:ebook`, `kind:comic`. MOBI, AZW3 and DjVu are searchable by kind; their reading previews are not included.
+- Press Space to open macOS Quick Look for the selected items. Press Space or Escape to close it.
+- The inspector previews formats such as Markdown, code, HTML, JSON, CSV and SQLite. HTML previews offer rendered and source views and block scripts and network access.
+- Read EPUB chapters offline in the inspector and browse CBZ, CBR, CB7 and CBT comic archives. Search with `kind:book` or `kind:comic`.
 
 ## File operations
 
@@ -83,16 +75,14 @@ Settings ▸ Appearance ▸ Color theme offers System (the Mac’s own colors) a
 - Batch rename: replace text or a regular expression, add text, number with a format, or change case, with a live preview and one undo.
 - Finder tags: colored dots in every view, the seven colors in the context menu, a tag picker that finds or creates tags as you type, and a Tags section in the sidebar. Strata and Finder share the same tags.
 - Get Info in the inspector: Spotlight comments, the app a file opens with (or all like it), Locked, and permissions.
-- Check for Updates… on apps (right-click one or several): newer versions from each app's Sparkle update feed or the App Store, with Software Update for Apple's own apps. Strata doesn't install other apps' updates; each app installs its own.
 - Share: AirDrop, Messages, Mail and more from the selection.
 
 ## For developers
 
-- Git status on every file in every view, and the current branch in the path bar.
-- The project inspector recognizes Node, Rust, Swift, .NET, Python, Go and more, lists the project's scripts, and cleans build folders such as node_modules (they go to the Trash).
+- The project inspector recognizes Node, Rust, Swift, .NET, Python, Go and more, lists the project’s scripts and shows the sizes of build folders such as node_modules.
 - Previews for code (syntax highlighted, with line numbers), Markdown, HTML, JSON, CSV, SQLite databases and archives.
 - Containers: with Docker Desktop, OrbStack, Colima, Podman, Rancher Desktop or Lima running, Containers in the sidebar shows the containers as folders. Each one's files can be browsed from `/` (read-only copies, read from the container as you browse, cleared when Strata quits), previewed, and copied or dragged out. Containers can be started, stopped, restarted, paused and resumed, and Open in Terminal opens a shell in one. The inspector shows a container's image, ports and mounts, and a project's Compose services with Start All and Stop All. A Compose project's containers are grouped as a stack, which starts, stops and restarts at once and opens its project folder in the terminal or a code editor.
-- Command line: install from Settings, then `strata .` opens the current folder and `strata -s "invoice pdf"` searches. URL scheme: `strata://open?path=…`, `strata://search?q=…&in=…`, `strata://recents`, `strata://duplicates`.
+- Command line: install from Settings, then `strata .` opens the current folder and `strata -s "invoice pdf"` searches. URL scheme: `strata://open?path=…`, `strata://search?q=…&in=…`, `strata://recents`.
 
 ## On-device intelligence
 
@@ -101,17 +91,17 @@ Settings ▸ Appearance ▸ Color theme offers System (the Mac’s own colors) a
 
 ## Privacy and security
 
-- No accounts, no analytics, no servers of Strata's own. Files and searches never leave the Mac unless you copy them to a server you added. The only network requests are update checks (Strata's own via GitHub Releases, if allowed, and, when you choose Check for Updates on apps, those apps' own update feeds or the App Store's lookup) and connections to the SFTP servers, S3 buckets and network shares you add yourself. Nothing about your files is sent. Containers are reached through the container engine's socket on the Mac, never over the network.
+- No accounts, no analytics, no servers of Strata's own. Files and searches never leave the Mac unless you copy them to a server you added. Strata connects to the SFTP servers, S3 buckets and network shares you add. Containers are reached through the container engine's socket on the Mac, never over the network.
 - The file index, content index and history are encrypted on disk (AES-GCM) with a key kept in the login keychain.
-- Browsing a folder can't run code from it: Strata switches off the git features a downloaded repository could use for that (fsmonitor, hooks, filters, lazy fetches).
+- Browsing a folder can't run code from it.
 - Full Disk Access is optional; it lets Strata search and measure everything without macOS asking folder by folder.
 
 ## Keyboard shortcuts (a selection)
 
 - ⌘K command palette · ⌘L type a path · ⇧⌘G go to folder
 - ⌘[ back · ⌘] forward · ⌘↑ enclosing folder · ⌘↓ open
-- ⌘1 to ⌘5 views · ⌘\ dual pane · ⌘I inspector · Space Quick Look · ⌥⌘K connect to server
-- Every menu shortcut can be changed in Settings ▸ Shortcuts; Settings ▸ Appearance sets the color theme, window tint, light or dark mode, row density and the file name size.
+- ⌃⌘1 to ⌃⌘5 views · ⌘1 to ⌘9 open visible sidebar folders in order · ⌘\ dual pane · ⌘I inspector · Space Quick Look · ⌥⌘K connect to server
+- Every menu shortcut can be changed in Settings ▸ Shortcuts. Settings ▸ Appearance controls light or dark mode, row density and file name size.
 - ⇧⌘N new folder · ⌥⌘N new file · ⇧⌘F Recents · ⇧⌘H Home · ⇧⌘D Desktop · ⇧⌘O Documents · ⌥⌘L Downloads · ⇧⌘A Applications
 - ⌘/ the searchable list of every shortcut
 
@@ -119,6 +109,6 @@ Settings ▸ Appearance ▸ Color theme offers System (the Mac’s own colors) a
 
 - Does it replace Finder? It works alongside Finder. Turning on "Open Reveal in Finder in Strata" makes other apps open Strata.
 - Is it safe to download? Releases are signed with a Developer ID and notarized by Apple, and each release lists SHA-256 checksums.
-- Does it collect data? No. It only checks for updates: its own on GitHub, if allowed, and other apps' when you ask.
-- How do I update? Strata ▸ Check for Updates…, or automatically if allowed in Settings ▸ General.
+- Does it collect data? There are no accounts, analytics or telemetry.
+- How do I update? Download the latest version from GitHub Releases and replace Strata in Applications.
 - Can I build it myself? Yes: `git clone https://github.com/cristipufu/strata-files.git && cd strata-files && scripts/build.sh release --open` (needs the Swift toolchain).

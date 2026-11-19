@@ -15,7 +15,6 @@ extension BrowserWindowController: NSToolbarDelegate, NSToolbarItemValidation {
         switch id {
         case .back, .forward: return makeNavigationItem(id)
         case .pathBar: return makeLocationItem(id, inserted: flag)
-        case .sidebarMode: return makeSidebarModeItem(id, inserted: flag)
         case .viewMode: return makeViewModeItem(id, inserted: flag)
         case .dualPane: return makeDualPaneItem(id, inserted: flag)
         case .share: return makeShareItem(id)
@@ -86,25 +85,6 @@ extension BrowserWindowController: NSToolbarDelegate, NSToolbarItemValidation {
             toolbarItems.adopt(item)
         }
         item.visibilityPriority = .high
-        return item
-    }
-
-    private func makeSidebarModeItem(_ id: NSToolbarItem.Identifier, inserted flag: Bool) -> NSToolbarItem {
-        // Next to Hide Sidebar: what the sidebar shows, Places (Favorites, Locations…) or the folder tree.
-        let places = String(localized: "Places", comment: "Sidebar switch: Favorites, Locations and the other sections")
-        let folders = String(localized: "Folders", comment: "Sidebar switch: the tree of folders")
-        let images = [NSImage(systemSymbolName: "star", accessibilityDescription: places) ?? NSImage(),
-                      NSImage(systemSymbolName: "list.bullet.indent", accessibilityDescription: folders) ?? NSImage()]
-        let item = NSToolbarItemGroup(itemIdentifier: id, images: images, selectionMode: .selectOne, labels: [places, folders],
-                                      target: self, action: #selector(sidebarModeChanged(_:)))
-        item.label = String(localized: "Sidebar", comment: "Toolbar item label: switch between Places and the folder tree")
-        item.paletteLabel = String(localized: "Sidebar Contents", comment: "Toolbar customization palette label")
-        item.controlRepresentation = .expanded
-        item.subitems[0].toolTip = String(localized: "Favorites, disks and other places", comment: "Tooltip of the sidebar's Places switch")
-        item.subitems[1].toolTip = String(localized: "Every folder, as a tree", comment: "Tooltip of the sidebar's Folders switch")
-        item.selectedIndex = services.preferences.sidebarShowsTree ? 1 : 0
-        item.visibilityPriority = .low
-        if flag { toolbarItems.adopt(item) }
         return item
     }
 

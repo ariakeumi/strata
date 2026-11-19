@@ -10,6 +10,30 @@ import Testing
 @testable import StrataSearch
 
 extension ColorThemeTests {
+    @Test func legacyPalettePreferencesUseSystemColorsInEveryAppearanceMode() throws {
+        let app = NSApplication.shared
+        let previousAppearance = app.appearance
+        let saved = ThemeStyle.options, contrast = ThemeStyle.highContrast
+        defer {
+            app.appearance = previousAppearance
+            ThemeStyle.apply(saved, windows: [], highContrast: contrast)
+        }
+        let preferences = try Prefs.isolated()
+        preferences.defaults.set("teal", forKey: "colorTheme")
+        preferences.defaults.set(true, forKey: "tintWindow")
+        preferences.defaults.set(Data("{}".utf8), forKey: "colorThemeFile")
+
+        let modes: [(Int, NSAppearance.Name?)] = [(1, .aqua), (2, .darkAqua), (0, nil)]
+        for (mode, appearance) in modes {
+            preferences.theme = mode
+            AppDelegate.applyAppearance(preferences, windows: [])
+            #expect(app.appearance?.name == appearance)
+            #expect(ThemeStyle.options.palette == .system)
+            #expect(!ThemeStyle.colorsSurfaces)
+            #expect(ThemeStyle.controlAccent == .controlAccentColor)
+        }
+    }
+
     @Test func systemRestoresTheOriginalNativeWindowMaterialsInLightAndDark() throws {
         let saved = ThemeStyle.options, contrast = ThemeStyle.highContrast
         defer { ThemeStyle.apply(saved, windows: [], highContrast: contrast) }

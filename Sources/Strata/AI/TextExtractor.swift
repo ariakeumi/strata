@@ -4,7 +4,7 @@ import CNativeReaders
 import UniformTypeIdentifiers
 import Vision
 
-/// Plain text pulled out of a document, ready for chunking, embedding or summarising.
+/// Plain text pulled out of a document, ready for summarising.
 package nonisolated struct ExtractedText: Sendable {
     package enum Source: String, Sendable { case plain, markdown, code, rich, html, pdf, ocr }
 
@@ -596,7 +596,7 @@ package nonisolated enum TextExtractor {
 
 // MARK: - Chunking
 
-/// Splits text into overlapping passages along sentence boundaries, so each embedding covers one coherent stretch.
+/// Splits text into overlapping passages along sentence boundaries, keeping each passage coherent.
 package nonisolated enum TextChunker {
     package struct Chunk: Sendable, Hashable {
         package var text: String
@@ -704,7 +704,7 @@ package nonisolated enum TextChunker {
 
 // MARK: - Terms
 
-/// Word normalisation shared by the index (keyword scoring), snippets, summaries and name matching:
+/// Word normalisation for summaries and name matching:
 /// lowercase, accents folded, stop words dropped, light English stemming.
 package nonisolated enum Terms {
     package static func words(_ text: String) -> [Substring] {

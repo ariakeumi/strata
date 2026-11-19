@@ -1,8 +1,6 @@
 import AppKit
 
-/// What a pane shows in place of a folder besides its rows: how many matched (a search, Recents) or what's said instead
-/// (duplicate sets, a message while they're found), and the list's column widths from before, put back when the
-/// folder returns.
+/// The result view’s settings and match count, and the folder’s column widths to restore when leaving results.
 final class PaneResults {
     private(set) var mode = BrowserViewMode.list
     private var folderIconSize: Double?
@@ -21,25 +19,14 @@ final class PaneResults {
         return folderIconSize
     }
 
-    enum Tally: Equatable {
-        /// How many matched before the list was capped.
-        case matched(Int)
-        /// Said in place of a count; empty says nothing.
-        case summary(String)
-    }
-
-    var tally = Tally.matched(0)
+    var total: Int? = 0
     private var widthsBefore: [(NSUserInterfaceItemIdentifier, CGFloat)] = []
 
     /// The status bar's words for the `shown` rows.
     func status(shown: Int) -> [String] {
-        switch tally {
-        case .summary(let summary):
-            summary.isEmpty ? [] : [summary]
-        case .matched(let total):
-            [total > shown ? String(localized: "Top \(shown.formatted()) of \(total) results", comment: "plural")
-                           : String(localized: "\(shown) results", comment: "plural")]
-        }
+        guard let total else { return [] }
+        return [total > shown ? String(localized: "Top \(shown.formatted()) of \(total) results", comment: "plural")
+                              : String(localized: "\(shown) results", comment: "plural")]
     }
 
     /// Makes room in `list` for "Where" from Date and Kind, not from Name (the only column that gives up width on its

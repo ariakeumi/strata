@@ -17,13 +17,13 @@ struct SoundsTests {
 
     @Test func theTrashSoundsFollowTheSystemsSettingForInterfaceSounds() throws {
         // Loading one plays nothing.
-        for name in ["move to trash", "empty trash"] {
-            let sound = try #require(Sounds.finderSound(name), "\(name)")
-            defer { AudioServicesDisposeSystemSoundID(sound) }
-            var id = sound, isInterfaceSound: UInt32 = 0, size = UInt32(MemoryLayout<UInt32>.size)
+        for sound in Sounds.TrashSound.allCases {
+            var id = try #require(Sounds.load(sound), "\(sound.rawValue)")
+            defer { AudioServicesDisposeSystemSoundID(id) }
+            var isInterfaceSound: UInt32 = 0, size = UInt32(MemoryLayout<UInt32>.size)
             let read = AudioServicesGetProperty(kAudioServicesPropertyIsUISound, UInt32(MemoryLayout<SystemSoundID>.size), &id,
                                                 &size, &isInterfaceSound)
-            #expect(read == noErr && isInterfaceSound == 1, "\(name)")
+            #expect(read == noErr && isInterfaceSound == 1, "\(sound.rawValue)")
         }
     }
 }

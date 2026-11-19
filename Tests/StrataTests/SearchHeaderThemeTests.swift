@@ -14,13 +14,13 @@ extension ColorThemeTests {
         let saved = ThemeStyle.options, contrast = ThemeStyle.highContrast
         defer { ThemeStyle.apply(saved, windows: [], highContrast: contrast) }
         let search = SearchScopeBar()
-        search.configure(folderName: "Downloads", everywhere: false, matchCase: true, caseApplies: true)
+        search.configure(folderName: "Downloads", matchCase: true, caseApplies: true)
         search.setSummary("12 matches")
         let notice = NoticeBar()
         var opened = 0
         notice.show(symbol: "archivebox", text: "Read-only archive", button: "Show") { opened += 1 }
         let controls = searchThemeDescendants(search.view)
-        let scope = try #require(controls.compactMap { $0 as? NSSegmentedControl }.first)
+        let scope = try #require(controls.compactMap { $0 as? NSTextField }.first { $0.stringValue == "Downloads" })
         let matchCase = try #require(controls.compactMap { $0 as? NSButton }.first { $0.title == String(localized: "Match Case") })
         let summary = try #require(controls.compactMap { $0 as? NSTextField }.first { $0.stringValue == "12 matches" })
         let button = try #require(searchThemeDescendants(notice.view).compactMap { $0 as? NSButton }.first)
@@ -43,8 +43,8 @@ extension ColorThemeTests {
                     }
                 }
                 let current = searchThemeDescendants(search.view)
-                #expect([scope, matchCase, summary].allSatisfy { control in current.contains { $0 === control } })
-                #expect(scope.selectedSegment == 1 && scope.label(forSegment: 1) == "“Downloads”")
+                #expect(([scope, matchCase, summary] as [NSControl]).allSatisfy { control in current.contains { $0 === control } })
+                #expect(scope.stringValue == "Downloads" && !scope.isEditable)
                 #expect(matchCase.state == .on && summary.stringValue == "12 matches")
             }
         }

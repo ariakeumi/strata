@@ -4,7 +4,6 @@ import AppKit
 @_exported import StrataFiles
 @_exported import StrataQueue
 @_exported import StrataSearch
-@_exported import StrataIndex
 @_exported import StrataModel
 @_exported import StrataPreviews
 @_exported import StrataSupport
@@ -13,8 +12,6 @@ import AppKit
 SecureStorage.useApplicationStorage()
 Prefs.useApplicationPreferences()
 Sounds.useApplicationSounds()
-UserThemes.shared.useApplicationFolder()
-UserThemes.shared.rememberChoice(in: Prefs.shared.defaults)
 let app = NSApplication.shared
 CloudStore.shared.foldersShown = BrowserWindowController.foldersShown
 let delegate = AppDelegate(browserServices: .shared)

@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-/// Guards background text reads and content indexing against materializing dataless cloud placeholders (`SF_DATALESS`).
+/// Guards background reads against materializing dataless cloud placeholders (`SF_DATALESS`).
 nonisolated package enum DatalessFile {
     package static func isDataless(_ status: stat) -> Bool {
         status.st_flags & UInt32(SF_DATALESS) != 0

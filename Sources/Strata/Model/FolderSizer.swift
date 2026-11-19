@@ -86,18 +86,6 @@ nonisolated package struct FolderSize: Equatable, Sendable {
         return known.size
     }
 
-    /// The index has read all of `url`, so its total is the one from now on: what a walk you asked for measured
-    /// before does not stand in for a total the index gives later.
-    package static func indexHoldsAll(of url: URL) {
-        if askedSize(url) != nil { measured[key(url)] = nil }
-    }
-
-    /// The size to show for a folder the index answers for: its total, or, while that leaves part of the folder
-    /// out, what a walk you asked for measured.
-    nonisolated package static func shown(indexed: FolderSize, asked: FolderSize?) -> FolderSize {
-        indexed.allocationComplete ? indexed : asked ?? indexed
-    }
-
     /// What walks you asked for measured for the folders directly in `folder`, by path.
     package static func askedSizes(in folder: URL) -> [String: FolderSize] {
         guard !measured.isEmpty else { return [:] }

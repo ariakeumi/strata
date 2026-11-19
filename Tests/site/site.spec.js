@@ -33,7 +33,7 @@ for (const width of [320, 390, 768, 1440]) {
     await expect(page.locator('[data-download]').first()).toHaveAttribute('href', /\/v0\.6\.4\/Strata\.dmg$/);
     await expect.poll(() => page.evaluate(() => window.analyticsLoaded)).toBe(true);
     const viewTabs = page.getByRole('tablist', { name: 'Views', exact: true }).getByRole('tab');
-    await expect(viewTabs).toHaveText(['Icons ⌘1', 'List ⌘2', 'Columns ⌘3', 'Gallery ⌘4', 'Disk Usage ⌘5', 'Dual Pane ⌘\\']);
+    await expect(viewTabs).toHaveText(['Icons ⌃⌘1', 'List ⌃⌘2', 'Columns ⌃⌘3', 'Gallery ⌃⌘4', 'Disk Usage ⌃⌘5', 'Dual Pane ⌘\\']);
     for (const root of await page.locator('[data-tabs]').all()) {
       const tabs = root.getByRole('tab');
       for (const tab of await tabs.all()) {
@@ -59,8 +59,7 @@ for (const width of [320, 390, 768, 1440]) {
     expect(await page.locator('header.nav').evaluate(el => el.getBoundingClientRect().top)).toBe(0);
     expect(await page.evaluate(() => window.policyViolations)).toEqual([]);
     expect(errors).toEqual([]);
-    await expect(page.locator('#themes .lede')).toHaveText(
-      'Follow the system or choose Light or Dark. Keep native Mac colors, or pick one of seventeen themes.');
+    await expect(page.locator('.hero__shot img')).toHaveAttribute('alt', 'List view with live folder sizes');
     for (const image of await page.locator('img:visible').all()) {
       await image.scrollIntoViewIfNeeded();
       await expect.poll(() => image.evaluate(el => el.complete && el.naturalWidth > 0)).toBe(true);

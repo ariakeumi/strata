@@ -56,15 +56,14 @@ import UniformTypeIdentifiers
     }
 
     @Test(arguments: [BrowserViewMode.grid, .gallery])
-    func duplicateGroupsKeepEveryFileOnceAndShowItsGroupAndLocation(_ mode: BrowserViewMode) throws {
+    func resultsShowTheirLocationsAndKeepEachFileSelectable(_ mode: BrowserViewMode) throws {
         let tree = try TestTree("x/a.txt", "x/b.txt", "y/a.txt", "y/b.txt")
         let environment = try IndependentEnvironment()
         let browser = BrowserViewController(services: environment.services)
         defer { browser.stopBackgroundWork() }
         browser.view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
         let files = try entries(tree, ["x/a.txt", "y/a.txt", "x/b.txt", "y/b.txt"])
-        browser.showGroups([ResultGroup(title: "Group A", detail: "2 copies", entries: Array(files.prefix(2))),
-                            ResultGroup(title: "Group B", detail: "2 copies", entries: Array(files.suffix(2)))], summary: "Two groups")
+        browser.showResults(files, total: files.count)
         browser.setMode(mode)
         browser.view.layoutSubtreeIfNeeded()
         #expect(shown(browser).map(\.url) == files.map(\.url))
@@ -75,20 +74,15 @@ import UniformTypeIdentifiers
         #expect(environment.services.clipboard.read().urls == [files[1].url])
         if let grid = browser.gridController, mode == .grid {
             let item = try #require(grid.collectionView(grid.collectionView, itemForRepresentedObjectAt: IndexPath(item: 1, section: 0)) as? GridItem)
-            #expect(item.itemView.accessibilityLabel()?.contains("Group A") == true)
-            #expect(item.itemView.accessibilityLabel()?.contains("2 copies") == true)
+            #expect(item.itemView.accessibilityLabel()?.contains("/y") == true)
             #expect(item.view.toolTip?.contains(files[1].url.path) == true)
         } else if let gallery = browser.galleryController {
-            #expect(labels(in: gallery.view).contains { $0.stringValue.contains("Group A") && $0.stringValue.contains("2 copies") && $0.stringValue.contains("/y") })
+            #expect(labels(in: gallery.view).contains { $0.stringValue.contains("/y") })
         }
-        browser.showGroups([ResultGroup(title: "Renamed group", detail: "2 copies", entries: Array(files.prefix(2)))], summary: "One group")
+        browser.showResults(Array(files.prefix(2)), total: 2)
         #expect(browser.selectedURLs == [files[1].url])
-        if let gallery = browser.galleryController, mode == .gallery {
-            #expect(labels(in: gallery.view).contains { $0.stringValue.contains("Renamed group") })
-        }
         browser.setMode(.list)
         #expect(browser.selectedURLs == [files[1].url])
-        #expect(browser.outlineView.isItemExpanded(browser.visibleRows.first))
         #expect(tree.snapshot() == ["x/", "x/a.txt", "x/b.txt", "y/", "y/a.txt", "y/b.txt"])
     }
 
@@ -157,7 +151,7 @@ import UniformTypeIdentifiers
         switch browser.effectiveMode {
         case .grid: browser.gridController?.entries ?? []
         case .gallery: browser.galleryController?.entries ?? []
-        default: browser.visibleRows.flatMap { $0.groupTitle == nil ? [$0.entry] : $0.children?.map(\.entry) ?? [] }
+        default: browser.visibleRows.map(\.entry)
         }
     }
     private func labels(in view: NSView) -> [NSTextField] {

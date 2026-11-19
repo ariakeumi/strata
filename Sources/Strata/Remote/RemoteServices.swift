@@ -4,24 +4,26 @@ import Foundation
 /// existing services; independent environments keep the same server IDs in separate registries and copy roots.
 package final class RemoteServices {
     package static let shared = RemoteServices(servers: .shared, status: .shared, sessions: .shared,
-                                       files: .shared, connections: .shared, notifications: .default)
+                                       files: .shared, connections: .shared, credentials: RemoteKeychain.shared, notifications: .default)
 
     package let servers: RemoteServerStore
     package let status: RemoteStatus
     package let sessions: RemoteSessions
     package let files: RemoteFiles
     package let connections: RemoteConnections
+    package let smbCredentials: KeychainSecrets
     package let notifications: NotificationCenter
     package var copies: RemoteCopyStore { files.copies }
     package var browsing: RemoteBrowsing { RemoteBrowsing(sessions: sessions, files: files) }
 
     private init(servers: RemoteServerStore, status: RemoteStatus, sessions: RemoteSessions, files: RemoteFiles,
-                 connections: RemoteConnections, notifications: NotificationCenter) {
+                 connections: RemoteConnections, credentials: RemoteKeychain, notifications: NotificationCenter) {
         self.servers = servers
         self.status = status
         self.sessions = sessions
         self.files = files
         self.connections = connections
+        self.smbCredentials = credentials.smb
         self.notifications = notifications
     }
 
@@ -42,7 +44,7 @@ package final class RemoteServices {
                 notifications.post(name: .remoteServerDisconnected, object: servers, userInfo: ["serverID": id])
             })
         self.init(servers: servers, status: status, sessions: sessions, files: files, connections: connections,
-                  notifications: notifications)
+                  credentials: credentials, notifications: notifications)
     }
 
     /// Keep the confirmed definition and its owner through cleanup and saved-setting callbacks.

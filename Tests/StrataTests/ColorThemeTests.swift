@@ -34,21 +34,6 @@ struct ColorThemeTests {
         return (max(a, b) + 0.05) / (min(a, b) + 0.05)
     }
 
-    @Test func savedPaletteIsIndependentOfLightDarkAndUnknownValuesFollowTheSystem() throws {
-        let defaults = try Prefs.isolated().defaults
-        #expect(ColorThemeOptions.read(from: defaults, userThemes: .shared) == ColorThemeOptions())
-        defaults.set(2, forKey: "theme")
-        for palette in ColorTheme.allCases {
-            let options = ColorThemeOptions(palette: palette, tintsWindow: false)
-            options.save(in: defaults, userThemes: .shared)
-            #expect(ColorThemeOptions.read(from: defaults, userThemes: .shared) == options)
-            #expect(defaults.integer(forKey: "theme") == 2)
-        }
-        defaults.set("future-palette", forKey: "colorTheme")
-        defaults.set("invalid", forKey: "tintWindow")
-        #expect(ColorThemeOptions.read(from: defaults, userThemes: .shared) == ColorThemeOptions())
-    }
-
     @Test func everyPaletteKeepsSelectedNamesAndMatchingLettersReadable() throws {
         for name in [NSAppearance.Name.aqua, .darkAqua] {
             let appearance = try #require(NSAppearance(named: name))
@@ -272,50 +257,6 @@ struct ColorThemeTests {
             #expect(label.isEditable)
             #expect(cell.imageView?.image === image)
             #expect(cell.subviews == subviews)
-        }
-    }
-}
-
-extension ColorThemeTests {
-    @Test func softPalettesKeepTheirTintStrengthAndMidnightHasDeeperDarkSurfaces() throws {
-        let light = try #require(NSAppearance(named: .aqua))
-        let dark = try #require(NSAppearance(named: .darkAqua))
-        func chroma(_ color: NSColor, in appearance: NSAppearance) throws -> CGFloat {
-            let rgb = try resolved(color, in: appearance)
-            return max(rgb.redComponent, rgb.greenComponent, rgb.blueComponent)
-                - min(rgb.redComponent, rgb.greenComponent, rgb.blueComponent)
-        }
-        let slate = try #require(ColorTheme(rawValue: "slate"))
-        let sage = try #require(ColorTheme(rawValue: "sage"))
-        let midnightTheme = try #require(ColorTheme(rawValue: "midnight"))
-        #expect(try chroma(slate.surface(.content, dark: false), in: light)
-                < chroma(ColorTheme.blue.surface(.content, dark: false), in: light) * 0.4)
-        #expect(try chroma(sage.surface(.content, dark: false), in: light)
-                < chroma(ColorTheme.green.surface(.content, dark: false), in: light) * 0.6)
-        let midnight = try resolved(midnightTheme.surface(.content, dark: true), in: dark)
-        let blue = try resolved(ColorTheme.blue.surface(.content, dark: true), in: dark)
-        #expect(midnight.redComponent < blue.redComponent && midnight.blueComponent < blue.blueComponent)
-        let palettes = try ["slate", "sage", "coral", "plum", "ice", "midnight"].map { try #require(ColorTheme(rawValue: $0)) }
-        for appearance in [light, dark] {
-            let fills = try palettes.map { try resolved($0.surface(.content, dark: appearance.isDark), in: appearance) }
-            for (index, fill) in fills.enumerated() {
-                for other in fills.dropFirst(index + 1) {
-                    let distance = abs(fill.redComponent - other.redComponent)
-                        + abs(fill.greenComponent - other.greenComponent) + abs(fill.blueComponent - other.blueComponent)
-                    #expect(distance > 0.01, "New palettes need distinguishable surfaces in \(appearance.name).")
-                }
-            }
-        }
-    }
-
-    @Test func existingPalettesKeepTheirSurfacesWhenNewPalettesAreAdded() throws {
-        let palettes: [ColorTheme] = [.graphite, .blue, .green, .purple, .sand, .teal, .rose, .amber]
-        for dark in [false, true] {
-            for palette in palettes {
-                for role in ThemeSurfaceRole.allCases {
-                    #expect(palette.surface(role, dark: dark) == palette.seed.surface(role, dark: dark))
-                }
-            }
         }
     }
 }

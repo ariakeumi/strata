@@ -18,9 +18,6 @@ package nonisolated struct FileEntry: Sendable, Hashable {
     package let isAlias: Bool
     /// A plain file, as listed: not a folder, link, pipe or device. Previews read only these.
     package let isRegular: Bool
-    /// Its facts were read from the disk (a listing, or the item itself); an index hit's weren't, so whether it's an
-    /// alias isn't known.
-    package let isListed: Bool
     package let isVolume: Bool
     package let size: Int64?
     package let allocatedSize: Int64?
@@ -133,9 +130,9 @@ package nonisolated struct FileEntry: Sendable, Hashable {
 
     package init(url: URL, name: String, isDirectory: Bool, isPackage: Bool, isHidden: Bool, isSymlink: Bool, isVolume: Bool,
          size: Int64?, modified: Date?, created: Date?, added: Date?, kind: String, contentType: UTType?, displayName: String? = nil,
-         isAlias: Bool = false, isRegular: Bool? = nil, isListed: Bool = true, allocatedSize: Int64? = nil) {
+         isAlias: Bool = false, isRegular: Bool? = nil, allocatedSize: Int64? = nil) {
         self.url = url
-        locationKey = PathSpelling.short(url)
+        locationKey = url.isFileURL ? PathSpelling.short(url) : url.absoluteString
         self.name = name
         self.displayName = displayName ?? name
         self.isDirectory = isDirectory
@@ -143,9 +140,8 @@ package nonisolated struct FileEntry: Sendable, Hashable {
         self.isHidden = isHidden
         self.isSymlink = isSymlink
         self.isAlias = isAlias
-        // Made without a listing (an index hit, say): a file that isn't a folder or a link.
+        // Made without a listing: a file that isn't a folder or a link.
         self.isRegular = isRegular ?? (!isDirectory && !isSymlink)
-        self.isListed = isListed
         self.isVolume = isVolume
         self.size = size
         self.allocatedSize = allocatedSize
@@ -165,7 +161,6 @@ package nonisolated struct FileEntry: Sendable, Hashable {
         // The key says yes for symbolic links too.
         isAlias = values.isAliasFile == true && !isSymlink
         isRegular = values.isRegularFile == true
-        isListed = true
         isVolume = values.isVolume ?? false
         var isDirectory = values.isDirectory ?? false
         var isPackage = values.isPackage ?? false
@@ -192,22 +187,13 @@ package nonisolated struct FileEntry: Sendable, Hashable {
         FileEntry(url: url, name: name, isDirectory: isDirectory, isPackage: isPackage, isHidden: isHidden, isSymlink: isSymlink,
                   isVolume: isVolume, size: size, modified: modified, created: created, added: added, kind: kind ?? self.kind,
                   contentType: contentType, displayName: displayName ?? self.displayName, isAlias: isAlias,
-                  isRegular: isRegular, isListed: isListed, allocatedSize: allocatedSize)
+                  isRegular: isRegular, allocatedSize: allocatedSize)
     }
 
     /// Filtering accepts both the name on disk and the visible label, without highlighting offsets from another name.
     package func nameMatch(_ query: String) -> Fuzzy.Match? {
         if let match = Fuzzy.match(query, displayName) { return match }
         return Fuzzy.match(query, name).map { Fuzzy.Match(score: $0.score, indices: []) }
-    }
-
-    /// Index hits keep disk work out of the main thread. Resolve folder and bundle labels once results arrive.
-    @concurrent package static func localizedNames(_ entries: [Self]) async -> [Self] {
-        entries.map { entry in
-            guard !Task.isCancelled, entry.isDirectory || entry.isPackage,
-                  let values = try? entry.url.resourceValues(forKeys: [.localizedNameKey]), let name = values.localizedName else { return entry }
-            return entry.with(displayName: name)
-        }
     }
 
     package init?(url: URL) {
@@ -262,44 +248,6 @@ package nonisolated enum DirectoryLoader {
                 if batch.complete { return }
             }
         } onCancel: { cursor.cancel() }
-    }
-
-    /// A preview reads one level and stops before allocating an unbounded URL array. Expanded children have their
-    /// own request; hidden files, Applications merging and provider routing match the main browser.
-    @concurrent
-    package static func loadPreview(_ directory: URL, showHidden: Bool, applications: ApplicationsFolders,
-                            copies: CopyProviders, limit: Int) async throws -> Listing {
-        try Task.checkCancellation()
-        if copies.contains(directory) { try await copies.previewFolder(directory) }
-        try Task.checkCancellation()
-        let folder = FileEntry.openedFolder(directory)
-        return Listing(folder: folder, entries: try previewEntries(folder, showHidden: showHidden, applications: applications,
-                                                                   limit: limit))
-    }
-
-    private static func previewEntries(_ directory: URL, showHidden: Bool, applications: ApplicationsFolders,
-                                       limit: Int) throws -> [FileEntry] {
-        let options: FileManager.DirectoryEnumerationOptions = showHidden
-            ? [.skipsSubdirectoryDescendants, .skipsPackageDescendants]
-            : [.skipsSubdirectoryDescendants, .skipsPackageDescendants, .skipsHiddenFiles]
-        var entries: [FileEntry] = []
-        var examined = 0
-        for (index, folder) in applications.directories(for: directory).enumerated() {
-            var failure: Error?
-            guard let iterator = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: FileEntry.resourceKeys,
-                                                               options: options, errorHandler: { _, error in failure = error; return false }) else {
-                if index == 0 { throw CocoaError(.fileReadNoPermission) }
-                continue
-            }
-            for case let url as URL in iterator {
-                try Task.checkCancellation()
-                guard examined < limit else { throw CocoaError(.fileReadTooLarge) }
-                examined += 1
-                if let entry = FileEntry(url: url) { entries.append(entry) }
-            }
-            if let failure, index == 0 { throw failure }
-        }
-        return entries
     }
 
     @concurrent

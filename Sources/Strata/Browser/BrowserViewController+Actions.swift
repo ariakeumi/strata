@@ -1,5 +1,4 @@
 import AppKit
-import StrataIndex
 import StrataModel
 import StrataSupport
 import StrataTheme
@@ -9,11 +8,16 @@ extension BrowserViewController {
 
     @objc func openSelection(_ sender: Any?) {
         if sender as? NSOutlineView === outlineView, outlineView.clickedRow < 0 { return }
-        open(selectedEntries)
+        open(presentationSelection)
     }
 
     func open(_ entries: [FileEntry], fileOpener: @escaping (URL) -> Void = { NSWorkspace.shared.open($0) }) {
-        guard !entries.isEmpty else { return }
+        if let smbShares {
+            guard let entry = entries.first, node(for: entry.url)?.entry == entry else { return }
+            smbShares.onOpen?(entry.name)
+            return
+        }
+        guard !entries.isEmpty, entries.allSatisfy({ $0.url.isFileURL }) else { return }
         // A container's files are fetched first.
         fetches.afterFetching(entries.filter { !$0.isFolder }.map(\.url)) { [weak self] in
             self?.openFetched(entries, fileOpener: fileOpener)
@@ -25,8 +29,7 @@ extension BrowserViewController {
         if entries.count == 1, let entry = entries.first, opensAsFolder(entry) { return browseArchive(entry.url) }
         // A Finder alias to a folder opens that folder here, like a folder (macOS would hand it to Finder). Where an
         // alias leads is read away from the main thread.
-        // An index hit (search results, Recents) may be one too: its listing never said.
-        let aliases = entries.filter { !$0.isFolder && ($0.isAlias || !$0.isListed) }
+        let aliases = entries.filter { !$0.isFolder && $0.isAlias }
         guard !aliases.isEmpty else { return open(entries, aliasedFolders: [], fileOpener: fileOpener) }
         fetches.afterReading({ aliases.filter { FileEntry.openedFolder($0.url) != $0.url } }) { [weak self] folders in
             self?.open(entries, aliasedFolders: folders, fileOpener: fileOpener)
@@ -300,8 +303,15 @@ extension BrowserViewController {
     }
 
     @objc func reloadFolder(_ sender: Any?) {
+        if let smbShares {
+            smbShares.onReload()
+            return
+        }
+        if isShowingResults {
+            onReloadResults?()
+            return
+        }
         for node in nodes where node.entry.isDirectory { FolderSizer.invalidate(node.url) }
-        if let repository = watching.git?.repository { services.git.refresh(repository, force: true) }
         // Invalidation and the following read belong to the same request, cancelled together on navigation.
         refresh(invalidateCopy: true)
     }
@@ -321,7 +331,7 @@ extension BrowserViewController {
         let column = outlineView.column(withIdentifier: .name)
         guard column >= 0 else { return }
         outlineView.enumerateAvailableRowViews { rowView, row in
-            guard let node = self.outlineView.item(atRow: row) as? FileNode, node.groupTitle == nil,
+            guard let node = self.outlineView.item(atRow: row) as? FileNode,
                   let cell = rowView.view(atColumn: column) as? NameCellView else { return }
             cell.updateName(node.entry.listName(showingExtension: self.preferences.showListNameExtensions))
         }
@@ -346,57 +356,6 @@ extension BrowserViewController {
         gridController.refreshVisibleItems(reconfigure: true)
     }
 
-    /// Index totals moved: refresh visible sizes (and the order, when sorting by size).
-    @objc func indexChanged(_ notification: Notification? = nil) {
-        let changes = notification?.userInfo?[FileIndex.changesKey] as? IndexChanges ?? .all
-        if sizer.hasPending {
-            sizer.cancel { [index = services.index] url in index.folderSizeLookup(url) != .unindexed }
-        }
-        if changes.affectsCapacity { refreshVolumeSpaceIfVisible() }
-        if !isShowingResults {
-            if let directory, !changes.affects(directory.path) { return }
-        }
-        // Folder sizes come from the index; a file's is its own.
-        let column = outlineView.column(withIdentifier: .size)
-        let visible = outlineView.rows(in: outlineView.visibleRect)
-        let folders = IndexSet((visible.location..<NSMaxRange(visible)).filter { row in
-            guard let node = outlineView.item(atRow: row) as? FileNode, node.entry.isDirectory else { return false }
-            return changes.affects(node.url.path)
-        })
-        let affectsInspected = selectionAffected(by: changes)
-        if isShowingResults {
-            let checksAll = effectiveMode != .list || ordering.choice?.key == .size
-            let affectsOther = checksAll
-                ? nodes.contains { $0.entry.isDirectory && changes.affects($0.url.path) }
-                : affectsInspected
-            guard !folders.isEmpty || affectsOther else { return }
-        }
-        if column >= 0, !folders.isEmpty {
-            outlineView.reloadData(forRowIndexes: inlineRename.except(folders, in: outlineView), columnIndexes: [column])
-        }
-        if ordering.choice?.key == .size { scheduleResort() }
-        if effectiveMode == .treemap { pushContent(animated: true) }
-        if effectiveMode == .grid { gridController?.refreshVisibleItems(reconfigure: true) }
-        if affectsInspected {
-            delegate?.browserContentDidChange(self)
-        }
-    }
-
-    private func selectionAffected(by changes: IndexChanges) -> Bool {
-        if activeView == nil {
-            let rows = outlineView.selectedRowIndexes
-            if rows.isEmpty { return !isShowingResults && directory != nil }
-            if rows.count > 128 { return !isShowingResults }
-            return rows.contains { row in
-                guard let node = outlineView.item(atRow: row) as? FileNode, node.groupTitle == nil else { return false }
-                return changes.affects(node.url.path)
-            }
-        }
-        let selected = selectedEntries
-        if selected.isEmpty { return !isShowingResults && directory != nil }
-        if selected.count > 128 { return !isShowingResults }
-        return selected.contains { changes.affects($0.url.path) }
-    }
 
     func refreshVolumeSpaceIfVisible() {
         guard let view = viewIfLoaded, view.window?.isVisible == true, !view.isHiddenOrHasHiddenAncestor else { return }
@@ -404,13 +363,6 @@ extension BrowserViewController {
             guard let self else { return }
             delegate?.browserCapacityDidChange(self)
         }
-    }
-
-    /// Status arrived or changed: redraw visible rows (badges and ignored-dimming).
-    @objc func gitStatusChanged(_ notification: Notification) {
-        guard let root = notification.userInfo?["root"] as? URL, let directory,
-              directory.path == root.path || directory.path.hasPrefix(root.path + "/") else { return }
-        reloadVisibleCells(reconfigure: false)
     }
 
     /// Reads the shown folder's tags again (Finder may have changed them while Strata was in the background).

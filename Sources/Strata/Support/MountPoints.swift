@@ -18,7 +18,7 @@ package nonisolated enum MountPoints {
         return points
     }
 
-    package static func current() -> Set<String> {
+    package static func current(fileSystem: String? = nil) -> Set<String> {
         let count = getfsstat(nil, 0, MNT_NOWAIT)
         guard count > 0 else { return [] }
         // Room for disks mounted between the two calls.
@@ -26,8 +26,13 @@ package nonisolated enum MountPoints {
         let bytes = Int32(clamping: entries.count * MemoryLayout<statfs>.stride)
         let filled = entries.withUnsafeMutableBufferPointer { getfsstat($0.baseAddress, bytes, MNT_NOWAIT) }
         guard filled > 0 else { return [] }
-        return Set(entries.prefix(min(Int(filled), entries.count)).map { entry in
-            withUnsafeBytes(of: entry.f_mntonname) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+        return Set(entries.prefix(min(Int(filled), entries.count)).compactMap { entry in
+            if let fileSystem, fileSystem != decode(entry.f_fstypename) { return nil }
+            return decode(entry.f_mntonname)
         })
+    }
+
+    private static func decode<T>(_ field: T) -> String {
+        withUnsafeBytes(of: field) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
     }
 }

@@ -1,5 +1,5 @@
 import AppKit
-import CNativeDrawingTestSupport
+import CNativeViewTestSupport
 import Testing
 @testable import Strata
 @testable import StrataDev
@@ -20,7 +20,7 @@ import Testing
         let rect = NSRect(x: 4, y: 8, width: 12, height: 16)
         let expected = pane.convert(rect, to: nil)
         let result = await Task.detached {
-            (STDrawingProbeIsMainThread(), pane.isFlipped, STReadViewIsFlipped(pane), STConvertViewRect(pane, rect))
+            (STViewProbeIsMainThread(), pane.isFlipped, STReadViewIsFlipped(pane), STConvertViewRect(pane, rect))
         }.value
         #expect(!result.0 && result.1 && result.2 && result.3 == expected)
         browser.stopBackgroundWork()
@@ -31,17 +31,16 @@ import Testing
     @Test func constantGeometryCanBeReadThroughSwiftAndObjectiveCOffMain() async throws {
         let environment = try IndependentEnvironment()
         let grid = GridItemView(), strip = ColumnStripView(), flipped = FlippedView()
-        let badge = GitStatusBadge(), branch = GitBranchPill(clipboard: environment.services.clipboard)
         let preview = ColumnPreviewPane(thumbnails: environment.services.thumbnails, itemInfo: environment.services.itemInfo)
-        let flow = FlowView(spacing: 4, lineSpacing: 4), status = StatusItem(nil, "State"), shimmer = ShimmerView()
+        let flow = FlowView(spacing: 4, lineSpacing: 4), shimmer = ShimmerView()
         let map = TreemapView(copies: environment.services.copies), tags = TagMenuView(applied: [:]) { _ in }
         let diff = DiffView(rows: [])
         let result = await Task.detached {
-            let swift = [grid.isFlipped, strip.isFlipped, flipped.isFlipped, badge.isFlipped, branch.isFlipped,
-                         preview.isFlipped, flow.isFlipped, status.isFlipped, shimmer.isFlipped,
+            let swift = [grid.isFlipped, strip.isFlipped, flipped.isFlipped,
+                         preview.isFlipped, flow.isFlipped, shimmer.isFlipped,
                          map.isFlipped, tags.isFlipped, diff.isFlipped]
-            let views: [NSView] = [grid, strip, flipped, badge, branch, preview, flow, status, shimmer, map, tags, diff]
-            return (STDrawingProbeIsMainThread(), swift, views.map(STReadViewIsFlipped), map.isOpaque && STReadViewIsOpaque(map))
+            let views: [NSView] = [grid, strip, flipped, preview, flow, shimmer, map, tags, diff]
+            return (STViewProbeIsMainThread(), swift, views.map(STReadViewIsFlipped), map.isOpaque && STReadViewIsOpaque(map))
         }.value
         #expect(!result.0 && result.1.allSatisfy { $0 } && result.2.allSatisfy { $0 } && result.3)
         withExtendedLifetime(environment) {}

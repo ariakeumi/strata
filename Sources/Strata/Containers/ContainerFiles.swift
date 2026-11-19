@@ -37,14 +37,12 @@ package actor ContainerFiles {
     private let now: @Sendable () -> Date
     private let removeCopy: @Sendable (URL) async -> Void
     private var removals: [String: Task<Void, Never>] = [:]
-    private let readPreviewListing: @Sendable (ContainerSource, String) async throws -> ContainerListingResult
     private let readListing: @Sendable (ContainerSource, String) async throws -> ContainerListingResult
     private let readFile: @Sendable (ContainerSource, String, URL, StopFlag) async throws -> Void
     private let readTree: @Sendable (ContainerSource, String, URL, StopFlag) async throws -> Void
 
     package init(copies: ContainerCopyStore, now: @escaping @Sendable () -> Date = { Date() },
          readListing: (@Sendable (ContainerSource, String) async throws -> ContainerListingResult)? = nil,
-         readPreviewListing: (@Sendable (ContainerSource, String) async throws -> ContainerListingResult)? = nil,
          readFile: @escaping @Sendable (ContainerSource, String, URL, StopFlag) async throws -> Void = { source, path, url, stop in
         try await blocking { try CopyWriter.fetchFile(source.engine, id: source.id, containerPath: path, to: url, stop: stop) }
     }, readTree: @escaping @Sendable (ContainerSource, String, URL, StopFlag) async throws -> Void = { source, path, url, stop in
@@ -56,12 +54,10 @@ package actor ContainerFiles {
             _ = try? await blocking { copies.remove(url) }
         }
         self.readListing = readListing ?? { try await ContainerFiles.loadListing($0, path: $1) }
-        self.readPreviewListing = readPreviewListing ?? readListing ?? { try await ContainerFiles.loadPreviewListing($0, path: $1) }
         self.readFile = readFile
         self.readTree = readTree
     }
 
-    private var previews = CopyFetches()
     private var listings = CopyListings()
     package private(set) var fetches = CopyFetches()
     /// Placeholders' permissions in the container, from their listing (a secret only its owner may read isn't fetched
@@ -224,14 +220,10 @@ package actor ContainerFiles {
         let fetching = fetches.tasks(under: path)
         background.forEach { $0.cancel() }
         fetching.forEach { $0.cancel() }
-        let previewing = previews.tasks(under: path)
-        previewing.forEach { $0.cancel() }
         let listing = listings.tasks(under: path)
         for task in background { await task.value }
         for task in fetching { _ = try? await task.value }
         for task in listing { _ = await task.result }
-        for task in previewing { _ = try? await task.value }
-        previews.forget(under: path)
         fetches.forget(under: path)
         listings.forget(under: path)
         modes = modes.filter { !inside($0.key) }
@@ -283,7 +275,6 @@ package actor ContainerFiles {
         try? await fetch(chosen)
     }
 
-    /// Fetches `urls` that are still placeholders (opening, previewing or copying them). Throws the first problem.
     package func fetch(_ urls: [URL]) async throws {
         var fetched: [URL] = []
         for url in urls where copies.isPlaceholder(url) {
@@ -326,48 +317,4 @@ package actor ContainerFiles {
     }
 
     private func cancel(_ request: CopyFetches.Request) { fetches.cancel(request) }
-}
-
-extension ContainerFiles {
-    package func previewFolder(_ folder: URL) async throws {
-        try Task.checkCancellation()
-        let real = await RealPath.of(folder).lexicallyStandardized
-        // Engine and stack roots contain only container metadata; their normal refresh never fetches file contents.
-        if copies.engineFolder(real) != nil || copies.isStack(real) { await refresh(real); try Task.checkCancellation(); return }
-        guard let (source, top) = copies.copy(containing: real), let path = ContainerCopies.containerPath(of: real, top: top),
-              !closing.contains(top.lexicallyStandardized.path) else { throw CancellationError() }
-        let chosen = try await ChosenFile.choose(real)
-        let request = previews.request(real.path) {
-            Task {
-                let listing = try await self.readPreviewListing(source, path)
-                try Task.checkCancellation()
-                guard !self.closing.contains(top.lexicallyStandardized.path),
-                      self.copies.copy(containing: real)?.source.id == source.id else { throw CancellationError() }
-                guard listing.entries.count <= CopyProviders.previewEntryLimit else { throw CocoaError(.fileReadTooLarge) }
-                let entries = listing.entries
-                let stopped = StopFlag()
-                try await withTaskCancellationHandler {
-                    try await blocking {
-                        guard !stopped.isSet else { throw CancellationError() }
-                        try chosen.withParent { _, _, _ in }
-                        _ = try CopyWriter.apply(entries, contents: [:], to: real, containerPath: path, top: top, expected: chosen.identity)
-                    }
-                    try Task.checkCancellation()
-                } onCancel: { stopped.set() }
-                if self.modes.count > 200_000 { self.modes.removeAll() }
-                for entry in entries where entry.kind == .file && ContainerCopies.isSafeName(entry.name) {
-                    self.modes[real.appendingPathComponent(entry.name).path] = entry.mode
-                }
-            }
-        }
-        defer { previews.finish(request) }
-        try await withTaskCancellationHandler {
-            try await request.task.value
-            try Task.checkCancellation()
-        } onCancel: {
-            Task { await self.cancelPreview(request) }
-        }
-    }
-
-    private func cancelPreview(_ request: CopyFetches.Request) { previews.cancel(request) }
 }

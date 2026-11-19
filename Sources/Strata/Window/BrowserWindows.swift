@@ -1,12 +1,12 @@
 import AppKit
+import Quartz
 
 /// Window creation stays at the application boundary. Workspaces supply their owner; AppKit still presents and tabs
 /// production windows, while headless tests can create unshown controllers without borrowing the app delegate.
 struct BrowserWindows {
     var controllers: () -> [BrowserWindowController]
     var open: (URL, URL?, NSWindow?, BrowserServices, SavedWindowFrame?) -> BrowserWindowController?
-    var preview: (NSPanel, NSView) -> Bool = { _, _ in true }
-    var openFile: (URL) -> Void = { _ in }
+    var showQuickLook: (NSView) -> Void = { _ in }
     /// Brings a window to the front, out of the Dock if it's there: on screen only in the app, never in tests.
     var show: (NSWindow) -> Void = { _ in }
     var restoreLegacyFrame: (NSWindow) -> Bool = { _ in false }
@@ -35,12 +35,13 @@ struct BrowserWindows {
         open: { location, second, parent, services, frame in
             (NSApp.delegate as? AppDelegate)?.openWindow(at: location, secondPane: second, tabbedWith: parent, services: services, frame: frame)
         },
-        preview: { panel, source in
-            guard source.window?.isVisible == true else { return false }
-            panel.makeKeyAndOrderFront(nil)
-            return true
+        showQuickLook: { source in
+            guard let window = source.window, window.isVisible, window.isKeyWindow else { return }
+            if let controller = window.windowController as? BrowserWindowController,
+               !source.isDescendant(of: controller.browser.view) { return }
+            guard window.makeFirstResponder(source) else { return }
+            QLPreviewPanel.shared()?.makeKeyAndOrderFront(nil)
         },
-        openFile: { NSWorkspace.shared.open($0) },
         show: { window in
             if window.isMiniaturized { window.deminiaturize(nil) }
             window.makeKeyAndOrderFront(nil)

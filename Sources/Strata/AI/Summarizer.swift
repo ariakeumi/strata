@@ -29,6 +29,24 @@ package nonisolated struct DocumentSummary: Sendable, Hashable {
 ///
 /// Without it (or if the model refuses): the most representative sentences of the document, chosen by word frequency and position.
 package nonisolated enum Summarizer {
+    /// Passage text as prose: Markdown markers and table pipes removed, lines joined.
+    private static func displayText(_ text: String) -> String {
+        var lines: [String] = []
+        for raw in text.split(separator: "\n") {
+            var line = raw.trimmingCharacters(in: .whitespaces)
+            if line.allSatisfy({ "|-: ".contains($0) }) { continue }  // table rule
+            while line.hasPrefix("#") { line.removeFirst() }
+            for marker in ["- [ ] ", "- [x] ", "* ", "- ", "> "] where line.hasPrefix(marker) { line.removeFirst(marker.count) }
+            line = line.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "__", with: "").replacingOccurrences(of: "`", with: "")
+            if line.hasPrefix("|") {
+                line = line.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " · ")
+            }
+            line = line.trimmingCharacters(in: .whitespaces)
+            if !line.isEmpty { lines.append(line) }
+        }
+        return lines.joined(separator: " ")
+    }
+
     package static func canSummarize(_ url: URL) -> Bool {
         TextExtractor.canExtract(url)
     }
@@ -226,7 +244,7 @@ package nonisolated enum Summarizer {
         }
         var candidates: [Candidate] = []
         for (index, segment) in segments.enumerated() {
-            let display = SemanticIndex.displayText(segment.text)
+            let display = displayText(segment.text)
             let letters = display.filter(\.isLetter).count
             guard display.count >= 25, display.count <= 400, Double(letters) / Double(display.count) > 0.55,
                   display.compare(title, options: [.caseInsensitive, .diacriticInsensitive]) != .orderedSame else { continue }
@@ -255,12 +273,12 @@ package nonisolated enum Summarizer {
 
     private static func bestTitle(_ lines: [String], hint: String?) -> String {
         if let hint, !hint.isEmpty { return hint }
-        return lines.first.map { shorten(SemanticIndex.displayText($0), to: 80) } ?? String(localized: "Untitled", comment: "Title of a document summary when the document has none")
+        return lines.first.map { shorten(displayText($0), to: 80) } ?? String(localized: "Untitled", comment: "Title of a document summary when the document has none")
     }
 
     /// A short first line that reads like a heading ("Q3 Planning Offsite — Summary").
     package static func heading(_ text: String) -> String? {
-        guard let line = text.split(separator: "\n", omittingEmptySubsequences: true).first.map({ SemanticIndex.displayText(String($0)) }),
+        guard let line = text.split(separator: "\n", omittingEmptySubsequences: true).first.map({ displayText(String($0)) }),
               line.count >= 3, line.count <= 80, !line.hasSuffix("."), !line.hasSuffix(":"), line.filter(\.isLetter).count >= 3 else { return nil }
         return line
     }

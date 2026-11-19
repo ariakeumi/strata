@@ -5,7 +5,6 @@ import Foundation
 package nonisolated protocol CopyProvider: Sendable {
     func contains(_ url: URL) -> Bool
     func isPlaceholder(_ url: URL) -> Bool
-    func previewFolder(_ folder: URL) async throws
     func refresh(_ folder: URL) async
     func invalidate(_ folder: URL) async
     func reveal(_ url: URL) async -> Bool
@@ -17,14 +16,9 @@ package nonisolated protocol CopyProvider: Sendable {
     func sourceName(_ url: URL) -> String?
 }
 
-extension CopyProvider {
-    package func previewFolder(_ folder: URL) async throws { await refresh(folder) }
-}
-
 /// Routes each URL to its owner. The order is stable: explicit reads finish one provider before starting the next,
 /// and the first owner of a path handles it exactly once. Independent environments can supply their own providers.
 package nonisolated struct CopyProviders: Sendable {
-    package static let previewEntryLimit = 50_000
     package static let live = CopyProviders(servers: .shared, containers: .shared)
     private let providers: [any CopyProvider]
     private let readDirectory: @Sendable (URL) throws -> [String]
@@ -60,7 +54,6 @@ package nonisolated struct CopyProviders: Sendable {
         let root = clipboardRoot.lexicallyStandardized.path, path = url.lexicallyStandardized.path
         return path == root || path.hasPrefix(root + "/")
     }
-    package var previewRoot: URL { clipboardRoot.deletingLastPathComponent().appendingPathComponent("Previews.noindex", isDirectory: true) }
     package func isPlaceholder(_ url: URL) -> Bool { provider(for: url)?.isPlaceholder(url) ?? false }
     package func containsPlaceholder(in urls: [URL]) throws -> Bool {
         try Self.containsPlaceholder(in: urls, providers: providers, readDirectory: readDirectory)
@@ -99,7 +92,6 @@ package nonisolated struct CopyProviders: Sendable {
         guard FileManager.default.fileExists(atPath: clipboardRoot.path) else { return }
         Archiver.removeTree(clipboardRoot)
     }
-    package func previewFolder(_ folder: URL) async throws { try await provider(for: folder)?.previewFolder(folder) }
     package func refresh(_ folder: URL) async { await provider(for: folder)?.refresh(folder) }
     package func invalidate(_ folder: URL) async { await provider(for: folder)?.invalidate(folder) }
     package func reveal(_ url: URL) async -> Bool { await provider(for: url)?.reveal(url) ?? false }
@@ -146,7 +138,6 @@ package nonisolated struct ServerCopyProvider: CopyProvider {
     package let files: RemoteFiles
     package func contains(_ url: URL) -> Bool { files.copies.contains(url) }
     package func isPlaceholder(_ url: URL) -> Bool { files.copies.isPlaceholder(url) }
-    package func previewFolder(_ folder: URL) async throws { try await files.previewFolder(folder) }
     package func refresh(_ folder: URL) async { await files.refresh(folder) }
     package func invalidate(_ folder: URL) async { await files.invalidate(folder) }
     package func reveal(_ url: URL) async -> Bool { await files.reveal(url) }
@@ -162,7 +153,6 @@ private nonisolated struct ContainerCopyProvider: CopyProvider {
     let files: ContainerFiles
     func contains(_ url: URL) -> Bool { files.copies.contains(url) }
     func isPlaceholder(_ url: URL) -> Bool { files.copies.isPlaceholder(url) }
-    func previewFolder(_ folder: URL) async throws { try await files.previewFolder(folder) }
     func refresh(_ folder: URL) async { await files.refresh(folder) }
     func invalidate(_ folder: URL) async { await files.invalidate(folder) }
     func reveal(_ url: URL) async -> Bool { await files.reveal(url) }

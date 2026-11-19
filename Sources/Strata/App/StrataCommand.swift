@@ -55,7 +55,6 @@ struct StrataCommand {
         return display.isEmpty ? nil : display
     }
 
-    static let checkForUpdates = Self(String(localized: "Check for Updates…"), #selector(AppDelegate.checkForUpdates(_:)), .application, symbol: "arrow.triangle.2.circlepath")
     static let showSettings = Self(String(localized: "Settings…"), #selector(AppDelegate.showSettings(_:)), .application, ",", symbol: "gearshape")
     static let emptyTrash = Self(String(localized: "Empty Trash…"), #selector(AppDelegate.emptyTrash(_:)), .application, "\u{8}", [.command, .shift], symbol: "trash.slash")
     static let newWindow = Self(String(localized: "New Window"), #selector(AppDelegate.newWindow(_:)), .application, "n", symbol: "macwindow.badge.plus")
@@ -69,7 +68,7 @@ struct StrataCommand {
     static let addToSidebar = Self(String(localized: "Add to Sidebar"), #selector(BrowserViewController.addToSidebar(_:)), .browser, symbol: "sidebar.left")
     static let toggleQuickLook = Self(String(localized: "Quick Look"), #selector(BrowserViewController.toggleQuickLook(_:)), .browser, "y", symbol: "eye")
     static let getInfo = Self(String(localized: "Get Info"), #selector(BrowserViewController.getInfo(_:)), .browser, symbol: "info.circle")
-    static let renameSelection = Self(String(localized: "Rename"), #selector(BrowserViewController.renameSelection(_:)), .browser, symbol: "pencil")
+    static let renameSelection = Self(String(localized: "Rename"), #selector(BrowserViewController.renameSelection(_:)), .browser, "\r", symbol: "pencil")
     static let editTags = Self(String(localized: "Tags…"), #selector(BrowserViewController.editTags(_:)), .browser, symbol: "tag")
     static let compress = Self(String(localized: "Compress"), #selector(BrowserViewController.compress(_:)), .browser, symbol: "doc.zipper")
     static let extract = Self(String(localized: "Extract"), #selector(BrowserViewController.extract(_:)), .browser, symbol: "archivebox")
@@ -80,7 +79,7 @@ struct StrataCommand {
     static let ejectVolume = Self(String(localized: "Eject"), #selector(BrowserWindowController.ejectVolume(_:)), .window, "e", symbol: "eject")
     static let showHistory = Self(String(localized: "History…"), #selector(AppDelegate.showHistory(_:)), .application, "z", [.command, .option], symbol: "clock.arrow.circlepath")
     static let pasteAndMove = Self(String(localized: "Move Item Here"), #selector(BrowserViewController.pasteAndMove(_:)), .browser, "v", [.command, .option], symbol: "arrow.right.doc.on.clipboard")
-    static let copyPath = Self(String(localized: "Copy Path"), #selector(BrowserViewController.copyPath(_:)), .browser, "c", [.command, .option], symbol: "link")
+    static let copyPath = Self(String(localized: "Copy Path"), #selector(BrowserViewController.copyPath(_:)), .browser, "c", [.command, .shift], symbol: "link")
     static let biggerIcons = Self(String(localized: "Bigger Icons"), #selector(BrowserViewController.biggerIcons(_:)), .browser, "+", symbol: "plus.magnifyingglass")
     static let biggerIconsAlias = Self(String(localized: "Bigger Icons"), #selector(BrowserViewController.biggerIcons(_:)), .browser, "=", id: "biggerIcons:~1", symbol: "plus.magnifyingglass")
     static let smallerIcons = Self(String(localized: "Smaller Icons"), #selector(BrowserViewController.smallerIcons(_:)), .browser, "-", symbol: "minus.magnifyingglass")
@@ -124,13 +123,23 @@ struct StrataCommand {
     static let paste = Self(String(localized: "Paste"), #selector(BrowserViewController.paste(_:)), .browser, "v")
     static let putBack = Self(String(localized: "Put Back"), #selector(BrowserViewController.putBack(_:)), .browser, symbol: "tray.and.arrow.up")
     static let addToShelf = Self(String(localized: "Add to Shelf"), #selector(BrowserViewController.addToShelf(_:)), .browser, symbol: "tray.and.arrow.down")
-    static let checkAppsForUpdates = Self(String(localized: "Check for Updates…"), #selector(BrowserViewController.checkAppsForUpdates(_:)), .browser, symbol: "arrow.down.app")
 
     static func view(_ mode: BrowserViewMode) -> Self {
         var command = Self(mode.menuTitle, #selector(BrowserWindowController.syncViewMode(_:)), .window, mode.keyEquivalent,
-                           id: "syncViewMode:" + (mode.rawValue == 0 ? "" : "#\(mode.rawValue)"), symbol: mode.symbolName)
+                           [.command, .control], id: "syncViewMode:" + (mode.rawValue == 0 ? "" : "#\(mode.rawValue)"), symbol: mode.symbolName)
         command.tag = mode.rawValue
         return command
+    }
+
+    static let sidebarFolders: [Self] = (1...9).map { number in
+        var command = Self(String(localized: sidebarFolderTitle(number)), #selector(BrowserWindowController.goToSidebarFolder(_:)),
+                           .window, String(number), id: "goToSidebarFolder:#\(number)", symbol: "folder")
+        command.tag = number
+        return command
+    }
+
+    static func sidebarFolderTitle(_ number: Int) -> String.LocalizationValue {
+        "Sidebar Folder \(number)"
     }
 
     static func container(_ action: ContainerAction) -> Self {
@@ -143,4 +152,6 @@ struct StrataCommand {
     private static func function(_ key: Int) -> String {
         UnicodeScalar(key).map { String(Character($0)) } ?? ""
     }
+
+    static let renameSelectionKeypad = Self(renameSelection.title, renameSelection.action, .browser, "\u{3}", id: "renameSelection:~1")
 }

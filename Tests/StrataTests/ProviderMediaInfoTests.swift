@@ -373,7 +373,7 @@ struct ProviderMediaInfoTests {
         let reads = Reads(held: true)
         let environment = try Environment(tree, copies: copies, reader: { await reads.read($0) })
         let before = tree.snapshot()
-        for mode in ["results", "groups", "message", "stop"] {
+        for mode in ["results", "message", "stop"] {
             let pane = Pane(location: tree.url("provider"), services: environment.services)
             let browser = pane.browser
             _ = browser.view
@@ -387,7 +387,6 @@ struct ProviderMediaInfoTests {
             await reads.started(count)
             switch mode {
             case "results": browser.showResults([resultEntry], total: 1)
-            case "groups": browser.showGroups([(title: "Set", detail: "2", entries: [resultEntry])], summary: "1")
             case "message": browser.showMessage(symbol: "magnifyingglass", title: "Searching…")
             default: pane.stopBackgroundWork()
             }

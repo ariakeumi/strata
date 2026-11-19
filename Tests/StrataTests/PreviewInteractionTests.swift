@@ -20,7 +20,10 @@ struct PreviewInteractionTests {
 
     private func checkSpace(_ mode: BrowserViewMode, paneIndex: Int, folder: Bool) async throws {
         let tree = try TestTree("left/nested/folder/readme.md", "right/nested/folder/readme.md")
-        let environment = try PreviewEnvironment(tree)
+        var source: NSView?
+        var windows = BrowserWindows.headless
+        windows.showQuickLook = { source = $0 }
+        let environment = try PreviewEnvironment(tree, windows: windows)
         let before = tree.snapshot()
         let controller = BrowserWindowController(location: tree.url("left"), secondPane: tree.url("right"), services: environment.services)
         controller.split.splitView.autosaveName = nil
@@ -49,24 +52,23 @@ struct PreviewInteractionTests {
                                                 windowNumber: window.windowNumber, context: nil, characters: " ",
                                                 charactersIgnoringModifiers: " ", isARepeat: false, keyCode: 49))
         browser.focusView.keyDown(with: event)
-        let coordinator = environment.services.previews
-        let content = try #require(coordinator.content, "\(mode), pane \(paneIndex), folder \(folder)")
-        await content.session.task?.value
-        #expect(content.session.root?.url.fileViewKey == chosen.fileViewKey)
+        #expect(source === browser.focusView)
+        #expect(browser.numberOfPreviewItems(in: nil) == 1)
+        #expect((browser.previewPanel(nil, previewItemAt: 0) as? NSURL)?.absoluteURL?.fileViewKey == chosen.fileViewKey)
         #expect(browser.selectedURLs == selection && browser.directory == directory && pane.location == location)
         #expect(other.location == otherLocation && other.browser.selectedURLs == otherSelection)
         #expect(environment.preferences.viewMode == storedMode)
-        #expect(window.isVisible == false && coordinator.panel?.isVisible == false)
-        coordinator.panel?.cancelOperation(nil)
-        #expect(!coordinator.isOpen && content.session.isClosed)
-        #expect(browser.selectedURLs == selection && other.location == otherLocation)
+        #expect(!window.isVisible)
         #expect(tree.snapshot() == before)
         withExtendedLifetime(environment) {}
     }
 
     @Test func resultsKeepTheirLocationAndSpaceStillTypesIntoAnActiveFilter() async throws {
         let tree = try TestTree("root/target/inside.md", "root/target file.md")
-        let environment = try PreviewEnvironment(tree)
+        var source: NSView?
+        var windows = BrowserWindows.headless
+        windows.showQuickLook = { source = $0 }
+        let environment = try PreviewEnvironment(tree, windows: windows)
         let before = tree.snapshot()
         let browser = BrowserViewController(services: environment.services)
         _ = browser.view
@@ -76,9 +78,10 @@ struct PreviewInteractionTests {
         browser.select([tree.url("root/target")])
         let directory = browser.directory
         browser.toggleQuickLook(nil)
-        #expect(environment.services.previews.content?.session.root?.url == tree.url("root/target"))
+        #expect(source === browser.outlineView)
+        #expect(browser.numberOfPreviewItems(in: nil) == 1)
         #expect(browser.isShowingResults && browser.directory == directory)
-        environment.services.previews.close()
+        source = nil
         browser.load(tree.url("root"))
         await browser.directoryReads.task?.value
         browser.setFilter("target")
@@ -86,95 +89,32 @@ struct PreviewInteractionTests {
                                                 windowNumber: 0, context: nil, characters: " ", charactersIgnoringModifiers: " ",
                                                 isARepeat: false, keyCode: 49))
         browser.outlineView.keyDown(with: event)
-        #expect(browser.filter == "target " && !environment.services.previews.isOpen)
+        #expect(browser.filter == "target " && source == nil)
         #expect(tree.snapshot() == before)
         withExtendedLifetime(environment) {}
     }
 
-    @Test func aRefusedPresentationCancelsItsReadsBeforeTheyStart() async throws {
-        let tree = try TestTree("folder/a")
-        let reads = ControlledDirectoryReads()
-        defer { reads.stop() }
-        let environment = try PreviewEnvironment(tree, reader: reads.reader)
-        let before = tree.snapshot()
+    @Test func quickLookHandsTheFullSelectionToTheSystemPanel() async throws {
+        let tree = try TestTree("root/a.txt", "root/folder/", "root/file link -> a.txt", "root/pack.zip")
+        var presentations = 0
+        var windows = BrowserWindows.headless
+        windows.showQuickLook = { _ in presentations += 1 }
+        let environment = try PreviewEnvironment(tree, windows: windows)
         let browser = BrowserViewController(services: environment.services)
         _ = browser.view
-        let coordinator = PreviewCoordinator(preferences: environment.preferences, directories: reads.reader,
-                                             copies: environment.services.copies, thumbnails: environment.services.thumbnails,
-                                             clipboard: environment.services.clipboard, openFile: { _ in },
-                                             presentPanel: { _, _ in false })
-        coordinator.show(try #require(FileEntry(url: tree.url("folder"))), from: browser)
-        #expect(!coordinator.isOpen && coordinator.panel == nil)
-        #expect(reads.requests.isEmpty)
-        #expect(tree.snapshot() == before)
-        withExtendedLifetime(environment) {}
-    }
-
-    @Test func arrowKeysInQuickLookNavigateTheBrowserPastFoldersUnlessTheContainerTreeIsFocused() async throws {
-        let tree = try TestTree("root/a.txt", "root/middle/first.txt", "root/middle/second.txt", "root/z.txt")
-        let environment = try PreviewEnvironment(tree)
-        environment.preferences.foldersFirst = false
-        let before = tree.snapshot()
-        let controller = BrowserWindowController(location: tree.url("root"), services: environment.services)
-        controller.split.splitView.autosaveName = nil
-        let window = try #require(controller.window)
-        window.setFrameAutosaveName("")
-        defer { controller.panes.forEach { $0.stopBackgroundWork() }; window.contentViewController = nil }
-        let browser = controller.panes[0].browser
+        browser.load(tree.url("root"))
         await browser.directoryReads.task?.value
 
-        browser.select([tree.url("root/a.txt")])
-        window.makeFirstResponder(browser.focusView)
         browser.toggleQuickLook(nil)
+        #expect(presentations == 0)
 
-        let coordinator = environment.services.previews
-        let panel = try #require(coordinator.panel)
-        let content = try #require(coordinator.content)
-        #expect(content.session.root?.url.fileViewKey == tree.url("root/a.txt").fileViewKey)
-
-        let down = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
-                                                 windowNumber: panel.windowNumber, context: nil,
-                                                 characters: String(UnicodeScalar(NSDownArrowFunctionKey)!),
-                                                 charactersIgnoringModifiers: String(UnicodeScalar(NSDownArrowFunctionKey)!),
-                                                 isARepeat: false, keyCode: 125))
-        let tab = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
-                                                windowNumber: panel.windowNumber, context: nil,
-                                                characters: "\t", charactersIgnoringModifiers: "\t",
-                                                isARepeat: false, keyCode: 48))
-
-        // 1. Down arrow moves from a.txt to middle/ folder in the browser
-        panel.sendEvent(down)
-        await content.session.task?.value
-        #expect(browser.selectedURLs.map(\.fileViewKey) == [tree.url("root/middle").fileViewKey])
-        #expect(content.session.root?.url.fileViewKey == tree.url("root/middle").fileViewKey)
-        #expect(content.session.isContainer && content.session.selected == nil)
-
-        // 2. Down arrow again continues past middle/ to z.txt without getting trapped inside middle/
-        panel.sendEvent(down)
-        #expect(browser.selectedURLs.map(\.fileViewKey) == [tree.url("root/z.txt").fileViewKey])
-        #expect(content.session.root?.url.fileViewKey == tree.url("root/z.txt").fileViewKey)
-
-        // 3. Up arrow returns to middle/, and Tab steps into the folder's internal outline
-        let up = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
-                                               windowNumber: panel.windowNumber, context: nil,
-                                               characters: String(UnicodeScalar(NSUpArrowFunctionKey)!),
-                                               charactersIgnoringModifiers: String(UnicodeScalar(NSUpArrowFunctionKey)!),
-                                               isARepeat: false, keyCode: 126))
-        panel.sendEvent(up)
-        await content.session.task?.value
-        #expect(content.session.root?.url.fileViewKey == tree.url("root/middle").fileViewKey)
-
-        panel.sendEvent(tab)
-        #expect(panel.firstResponder === content.focusView)
-        #expect(content.session.selected?.name == "first.txt")
-
-        // Now Down arrow navigates inside the container's outline instead of the outer browser
-        panel.sendEvent(down)
-        #expect(browser.selectedURLs.map(\.fileViewKey) == [tree.url("root/middle").fileViewKey])
-        #expect(content.session.selected?.name == "second.txt")
-
-        coordinator.close()
-        #expect(tree.snapshot() == before)
-        withExtendedLifetime(environment) {}
+        browser.select(["a.txt", "folder", "file link", "pack.zip"].map { tree.url("root/" + $0) })
+        browser.toggleQuickLook(nil)
+        #expect(presentations == 1)
+        let count = browser.numberOfPreviewItems(in: nil)
+        #expect(count == 4)
+        let items = (0..<count).compactMap { (browser.previewPanel(nil, previewItemAt: $0) as? NSURL)?.absoluteURL }
+        #expect(items == browser.selectedURLs)
+        #expect(browser.previewPanel(nil, previewItemAt: count) == nil)
     }
 }

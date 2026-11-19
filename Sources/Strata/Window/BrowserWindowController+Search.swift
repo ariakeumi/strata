@@ -1,5 +1,4 @@
 import AppKit
-import StrataIndex
 import StrataModel
 import StrataTheme
 
@@ -8,34 +7,31 @@ extension BrowserWindowController {
 
     /// Starts a search from outside the window (the `strata` command, URL scheme).
     func search(_ query: String, in scope: URL?) {
-        go(.search(query, scope: scope))
+        go(.search(query, scope: scope ?? currentSearchFolder))
     }
 
-    /// The toolbar field searches the whole index, or with the index turned off the folder shown, which is read;
-    /// typing in the list still filters the current folder.
+    var currentSearchFolder: URL {
+        if case .search(_, let folder) = destination { return folder }
+        if browser.mode == .columns, let column = pane.columnLocation { return column }
+        return location
+    }
+
+    /// The toolbar searches recursively from the folder shown in the active pane.
     private func searchTextChanged(_ text: String) {
         let query = text.trimmingCharacters(in: .whitespaces)
         if query.isEmpty {
             if case .search = destination { leaveSearch() }
             return
         }
-        // Spotlight answers tag searches, so they don't wait for the first index.
-        let answeredBySpotlight = SpotlightQuery.parse(query) != nil
-        guard services.index.isReady || !services.index.isOn || answeredBySpotlight else {
-            // The index is still being built for the first time: filter this folder meanwhile.
-            browser.setFilter(query)
-            return
-        }
         if case .search(_, let scope) = destination {
             destination = .search(query, scope: scope)
             if let title = ResultsTitle(destination) { window?.title = title.window }
             // Typing or deleting case: shows on the checkbox.
-            split.scopeBar.setMatchCase(IndexQuery.isCaseSensitive(query), applies: Self.caseApplies(query))
+            split.scopeBar.setMatchCase(SearchQuery.isCaseSensitive(query), applies: Self.caseApplies(query))
             updateHeaders()
-            pane.search.run()
+            pane.search.run(debounce: true)
         } else {
-            let everywhere = services.index.isOn || answeredBySpotlight
-            go(.search(query, scope: everywhere ? nil : location))
+            search(query, in: nil)
         }
     }
 
@@ -48,12 +44,6 @@ extension BrowserWindowController {
         }
     }
 
-    func changeSearchScope(everywhere: Bool) {
-        guard case .search(let text, _) = destination else { return }
-        destination = .search(text, scope: everywhere ? nil : location)
-        pane.search.run()
-    }
-
     /// Whether Match Case means anything for `text`: not for Spotlight's searches or plain-English readings.
     static func caseApplies(_ text: String) -> Bool {
         SpotlightQuery.parse(text) == nil && NaturalQuery.interpret(text) == nil
@@ -62,7 +52,7 @@ extension BrowserWindowController {
     /// Match Case: the same search with `case:` added or taken out (so a saved search keeps it).
     func setSearchCase(_ on: Bool) {
         guard case .search(let text, let scope) = destination else { return }
-        let updated = IndexQuery.settingCase(on, in: text)
+        let updated = SearchQuery.settingCase(on, in: text)
         guard updated != text, !updated.isEmpty else { return }
         destination = .search(updated, scope: scope)
         updateChrome()
@@ -71,31 +61,9 @@ extension BrowserWindowController {
 
     func saveSearch() {
         guard case .search(let text, let scope) = destination else { return }
-        let saved = SavedSearch(name: text, query: text, scopePath: scope?.path)
+        let saved = SavedSearch(name: text, query: text, scopePath: scope.path)
         guard services.savedSearches.save(saved) else { return }
         split.sidebar.highlight(.search(saved))
-    }
-
-    @objc func indexChanged(_ notification: Notification? = nil) {
-        let incoming = notification?.userInfo?[FileIndex.changesKey] as? IndexChanges ?? .all
-        guard panes.contains(where: { $0.search.affects(incoming) }) else { return }
-        pendingSearchChanges.formUnion(incoming)
-        indexRefresh.request { [weak self] in
-            guard let self else { return }
-            let changes = self.pendingSearchChanges
-            self.pendingSearchChanges = IndexChanges()
-            for p in self.panes where p.search.affects(changes) {
-                p.search.refresh()
-            }
-        }
-    }
-
-    @objc func indexPhaseChanged() {
-        refreshStatus()
-    }
-
-    @objc func indexSwitched() {
-        panes.forEach { $0.search.indexSwitched() }
     }
 }
 

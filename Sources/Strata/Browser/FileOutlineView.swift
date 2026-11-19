@@ -1,6 +1,6 @@
 import AppKit
 
-/// The file list. Typing filters the folder instead of jumping to the first match; Return and Space follow Finder.
+/// The file list. Typing filters the folder instead of jumping to the first match.
 final class FileOutlineView: NSOutlineView {
     var onType: ((String) -> Void)?
     var onBackspace: (() -> Bool)?
@@ -115,10 +115,6 @@ final class FileOutlineView: NSOutlineView {
     override func menu(for event: NSEvent) -> NSMenu? {
         clickToRename.cancel()
         let row = self.row(at: convert(event.locationInWindow, from: nil))
-        if row >= 0, (item(atRow: row) as? FileNode)?.groupTitle != nil {
-            deselectAll(nil)
-            return nil
-        }
         if row >= 0, !selectedRowIndexes.contains(row) {
             selectRowIndexes([row], byExtendingSelection: false)
         } else if row < 0 {

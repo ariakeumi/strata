@@ -421,7 +421,7 @@ struct AsyncActionContextTests {
         await archiveFetchTask.value
         #expect(env2.transfers.jobs.isEmpty)
 
-        // 3. `openQuickLook(showPanel:)` suppresses showing Quick Look when selection changes away from the fetched item, and runs when still selected.
+        // 3. Quick Look waits for the selection it started fetching, even when a new selection still includes that item.
         let gate3 = Gate()
         let state3 = PlaceholderState([itemA, itemB])
         let env3 = try Environment(tree, folder: "env3", providers: [GatedProvider(root: tree.url("provider"), state: state3, gate: gate3)])
@@ -434,12 +434,12 @@ struct AsyncActionContextTests {
         browser3.openQuickLook { quickLookShown += 1 }
         let qlTask1 = try #require(browser3.fetches.action)
         await gate3.started(1)
-        browser3.select([itemB])
+        browser3.select([itemA, itemB])
         await gate3.finish()
         await qlTask1.value
         #expect(quickLookShown == 0)
 
-        // When itemB stays selected and navigation does not change, `openQuickLook` invokes `showPanel`.
+        browser3.select([itemB])
         browser3.openQuickLook { quickLookShown += 1 }
         let qlTask2 = try #require(browser3.fetches.action)
         await gate3.started(2)

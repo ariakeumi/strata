@@ -235,12 +235,16 @@ struct TagColumnTests {
         await environment.services.tags.load(entries).value
         let browser = BrowserViewController(services: environment.services)
         browser.loadViewIfNeeded()
-        browser.showGroups([(title: "Group", detail: "", entries: entries)], summary: "Group")
+        browser.load(tree.root)
+        await browser.directoryReads.task?.value
+        let group = try #require(browser.node(for: tree.url("group")))
+        browser.listing.replaceChildren(of: group, with: entries, sort: browser.sort)
+        browser.outlineView.reloadItem(group, reloadChildren: true)
+        browser.outlineView.expandItem(group)
         browser.select([entries[0].url], scroll: false)
         // The shared cache can be invalidated by another browser between await and this actor turn.
         for entry in entries { _ = environment.services.tags.tags(for: entry.url) }
         browser.applySort(.tags, ascending: true)
-        let group = try #require(browser.allRows.first)
         #expect(group.children?.map(\.entry.name) == ["z", "a"])
         #expect(browser.selectedURLs == [entries[0].url])
         browser.stopBackgroundWork()

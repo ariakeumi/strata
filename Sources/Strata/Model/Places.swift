@@ -8,13 +8,15 @@ package nonisolated struct Place: Sendable, Equatable {
     package var isEjectable = false
     /// A network share's address, which mounts it again.
     package var remountAddress: URL?
+    package let isSMB: Bool
 
-    package init(title: String, url: URL, symbol: String, isEjectable: Bool = false, remountAddress: URL? = nil) {
+    package init(title: String, url: URL, symbol: String, isEjectable: Bool = false, remountAddress: URL? = nil, isSMB: Bool = false) {
         self.title = title
         self.url = url
         self.symbol = symbol
         self.isEjectable = isEjectable
         self.remountAddress = remountAddress
+        self.isSMB = isSMB
     }
 }
 
@@ -22,9 +24,15 @@ package enum Places {
     package static var home: URL { FileManager.default.homeDirectoryForCurrentUser }
 
     /// Unmounts (and for disks, ejects) the volume at `url` off the main thread; reports a failure in `window`.
-    package static func eject(_ url: URL, from window: NSWindow?) {
+    package static func eject(_ url: URL, from window: NSWindow?, matchingSMB address: URL? = nil) {
         Task.detached {
             do {
+                if let address {
+                    let volumes = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: [.volumeURLForRemountingKey], options: []) ?? []
+                    let mounted = volumes.first { PathSpelling.short($0) == PathSpelling.short(url) }
+                    guard let found = (try? mounted?.resourceValues(forKeys: [.volumeURLForRemountingKey]))?.volumeURLForRemounting,
+                          ServerConnection.matchesSMB(found, share: address, guest: false, exactAccount: true) else { return }
+                }
                 try NSWorkspace.shared.unmountAndEjectDevice(at: url)
             } catch {
                 let name = FileManager.default.displayName(atPath: url.path)
@@ -37,7 +45,6 @@ package enum Places {
             }
         }
     }
-
 
     /// The sidebar's favorites: your own list once you've added, removed or reordered any, else the defaults; as
     /// `checks` last read them, for lists that mustn't wait on a disk.
@@ -53,7 +60,7 @@ package enum Places {
             guard isFolder(path) != false else { return nil }
             let url = URL(filePath: path, directoryHint: .isDirectory)
             return defaults.first { $0.url.lexicallyStandardized.path == url.lexicallyStandardized.path }
-                ?? Place(title: name(url), url: url, symbol: "folder")
+                ?? Place(title: name(url), url: url, symbol: pinnedFolderSymbol(for: url))
         }
     }
 
@@ -85,7 +92,7 @@ package enum Places {
         preferences.favoritePaths.map { $0.map { URL(filePath: $0, directoryHint: .isDirectory).lexicallyStandardized } } ?? shown
     }
 
-    nonisolated private static func folders(among urls: [URL]) async -> [URL] {
+    package nonisolated static func folders(among urls: [URL]) async -> [URL] {
         await OwnThread.run {
             urls.filter { url in
                 var isDirectory: ObjCBool = false
@@ -174,6 +181,7 @@ package enum Places {
             .volumeIsBrowsableKey, .volumeIsRootFileSystemKey,
         ]
         let urls = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: keys, options: [.skipHiddenVolumes]) ?? []
+        let smbMounts = MountPoints.current(fileSystem: "smbfs")
         return urls.compactMap { url in
             guard let v = try? url.resourceValues(forKeys: Set(keys)), v.volumeIsBrowsable ?? true else { return nil }
             let symbol: String
@@ -186,7 +194,17 @@ package enum Places {
             }
             return Place(title: v.volumeLocalizedName ?? url.lastPathComponent, url: url, symbol: symbol,
                          isEjectable: v.volumeIsRootFileSystem != true
-                             && (v.volumeIsLocal == false || v.volumeIsRemovable == true || v.volumeIsEjectable == true))
+                             && (v.volumeIsLocal == false || v.volumeIsRemovable == true || v.volumeIsEjectable == true),
+                         isSMB: smbMounts.contains(PathSpelling.system(PathSpelling.short(url))))
+        }
+    }
+
+    package static func pinnedFolderSymbol(for url: URL) -> String {
+        let home = self.home.lexicallyStandardized
+        switch PathSpelling.short(url) {
+        case home.appending(path: "Pictures", directoryHint: .isDirectory).path: return "photo"
+        case home.appending(path: "Movies", directoryHint: .isDirectory).path: return "film"
+        default: return "folder"
         }
     }
 }

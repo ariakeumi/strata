@@ -53,17 +53,14 @@ struct BookPreviewTests {
         let url = tree.url("book.epub"); try StoredZIP.make(entries).write(to: url); return url
     }
 
-    @Test func epubMetadataSpineCoverAndOfflineResourcesUseTheRealWorker() async throws {
+    @Test func epubMetadataSpineAndOfflineResourcesUseTheRealWorker() async throws {
         for legacy in [false, true] {
             let tree = try TestTree("book.epub", "outside/keep")
             let url = try epub(tree, legacy: legacy), before = tree.snapshot()
             let book = try await EPUBBook.open(FileReadSource(url))
             #expect(book.title == "A & B" && book.authors == "Ana, Ion" && book.publisher == "Acme" && book.language == "ro")
-            #expect(book.cover == ["Book", "Images", "cover art.png"])
             #expect(book.chapters.map(\.title) == ["First chapter", "Second chapter"])
             #expect(book.chapters.map(\.path) == [["Book", "Text", "01.xhtml"], ["Book", "Text", "02.xhtml"]])
-            let cover = try await BookFormat.cover(url, pixels: 64)
-            #expect(cover.width == 12 && cover.height == 24)
             let document = try EPUBChapterDocument(book: book, chapter: 0)
             let page = try await document.read(document.url)
             let html = String(decoding: page.data, as: UTF8.self)
@@ -80,19 +77,11 @@ struct BookPreviewTests {
         }
     }
 
-    @Test func comicsUseNaturalPageOrderAndNeverExtractForCovers() async throws {
-        let tree = try TestTree("comic.cbz", "outside/keep")
-        let bytes = StoredZIP.make([("10.png", try image(32, 8)), ("2.png", try image()), (".hidden/0.png", try image(8, 8))])
-        try bytes.write(to: tree.url("comic.cbz"))
-        let before = tree.snapshot()
-        let cover = try await BookFormat.cover(tree.url("comic.cbz"), pixels: 64)
-        #expect(cover.width == 12 && cover.height == 24)
+    @Test func comicAliasesKeepTheirArchivePreviews() {
         for ext in ["CBZ", "cbr", "cb7", "cbt"] {
             #expect(ArchiveKind(fileName: "book.\(ext)") != nil)
-            #expect(BookFormat.hasCover(URL(fileURLWithPath: "book.\(ext)")))
             guard case .archive = PreviewFormat(url: URL(fileURLWithPath: "book.\(ext)"), contentType: nil) else { Issue.record("Comic lost its archive preview"); continue }
         }
-        #expect(tree.snapshot() == before && tree.text("outside/keep") == "outside/keep")
     }
 
     @Test func coverWrappersAndUntitledSectionsNeverExposeInternalFilenames() async throws {
@@ -274,37 +263,6 @@ struct BookPreviewTests {
         #expect(tree.snapshot() == ["book.epub", "sibling"])
     }
 
-    @Test func archiveGridReconfigurationKeepsInFlightAndCachedPageThumbnails() async throws {
-        let tree = try TestTree("comic.cbz", "sibling")
-        let environment = try PreviewEnvironment(tree)
-        environment.preferences.showIconPreviews = true
-        let bytes = try image(), access = PreviewArchiveAccess(reader: { _, member, _, _ in
-            [ArchiveRecord(path: member ?? ["1.png"], kind: 1, size: Int64(bytes.count), modified: .distantPast, body: bytes)]
-        })
-        access.reset(try FileReadSource(tree.url("comic.cbz")))
-        let pages = PreviewArchiveThumbnails(access: access), requests = PreviewThumbnails(thumbnails: environment.services.thumbnails)
-        let item = PreviewItem(.member(ArchiveNode(name: "1.png", isDirectory: false, size: Int64(bytes.count)), path: ["1.png"]))
-        let cell = PreviewGridItem(); _ = cell.view
-        func configure() {
-            cell.configure(item, metrics: GridMetrics(iconSize: 80, typography: .standard), preferences: environment.preferences,
-                thumbnails: environment.services.thumbnails, requests: requests, scale: 1, archiveRequests: pages)
-        }
-        configure(); configure()
-        #expect(pages.pendingTasks.count == 1)
-        for task in pages.pendingTasks { await task.value }
-        let thumbnail = try #require(cell.itemView.imageView.image)
-        cell.itemView.imageView.layer?.removeAllAnimations()
-        let changes = BookImageChanges()
-        let observation = cell.itemView.imageView.observe(\.image) { _, _ in MainActor.assumeIsolated { changes.count += 1 } }
-        configure()
-        #expect(cell.itemView.imageView.image === thumbnail && changes.count == 0)
-        #expect(cell.itemView.imageView.layer?.animation(forKey: "thumbnail") == nil)
-        cell.stop(); pages.cancelAll(); requests.close()
-        withExtendedLifetime(observation) {}
-        #expect(tree.text("sibling") == "sibling")
-        withExtendedLifetime(environment) {}
-    }
-
     @Test func epubSourceReplacementAndOversizedMembersAreRefused() async throws {
         let tree = try TestTree("book.epub", "replacement", "outside/keep")
         let url = try epub(tree), source = try FileReadSource(url)
@@ -319,23 +277,29 @@ struct BookPreviewTests {
         #expect(tree.text("book.epub") == "replacement" && tree.snapshot() == before)
     }
 
-    @Test func coverFallbackIsSharedCachedAndFinishesWhenQuickLookHasNoThumbnail() async throws {
+    @Test func epubThumbnailRequestFinishesWhenQuickLookHasNoThumbnail() async throws {
         let tree = try TestTree("book.epub", "outside/keep")
         let url = try epub(tree), entry = try #require(FileEntry(url: url))
-        let thumbnails = FileThumbnails(copies: .live, containerStore: .shared, generate: { _, completion in completion(nil, false) })
+        var requests = 0
+        let thumbnails = FileThumbnails(copies: .live, containerStore: .shared, generate: { request, completion in
+            requests += 1
+            #expect(request.representationTypes == .thumbnail)
+            completion(nil, false)
+        })
         #expect(thumbnails.canThumbnail(entry))
         let image: NSImage? = await withCheckedContinuation { continuation in
             var result: NSImage?
             thumbnails.request(entry, size: 64, scale: 1, finished: { continuation.resume(returning: result) }) { result = $0 }
         }
-        #expect(image != nil && thumbnails.cached(entry, size: 64, scale: 1)?.exact == true)
-        #expect(!thumbnails.hasFailed(entry, size: 64, scale: 1))
+        #expect(requests == 1 && image == nil)
+        #expect(thumbnails.cached(entry, size: 64, scale: 1) == nil)
+        #expect(thumbnails.hasFailed(entry, size: 64, scale: 1))
         #expect(tree.text("outside/keep") == "outside/keep")
     }
 
     @Test func bookAndComicKindsAgreeAcrossIndexFiltersAndSpotlightAuthors() throws {
-        for alias in ["book", "books", "ebook", "ebooks"] { #expect(IndexQuery.parse("kind:\(alias)").kind == .book) }
-        #expect(IndexQuery.parse("kind:comic").kind == .comic)
+        for alias in ["book", "books", "ebook", "ebooks"] { #expect(SearchQuery.parse("kind:\(alias)").kind == .book) }
+        #expect(SearchQuery.parse("kind:comic").kind == .comic)
         #expect(QueryInterpreter.parse("comic books").filter.kinds == [.comic])
         #expect(QueryInterpreter.parse("ebooks").filter.kinds == [.book])
         for ext in ["epub", "mobi", "azw3", "djvu"] { #expect(SearchFilter.Kind.book.matches(type: nil, isDirectory: false, isPackage: false, extension: ext)) }
@@ -347,7 +311,7 @@ struct BookPreviewTests {
         #expect(!predicate.evaluate(with: ["kMDItemFSName": "Foundation.pdf", "kMDItemAuthors": ["Isaac Asimov"]]))
     }
 
-    @Test func epubUsesTheSameNativePreviewInQuickLookAndInspectorAndClosesItsWebSession() async throws {
+    @Test func epubUsesARichPreviewAndClosesItsWebSession() async throws {
         let tree = try TestTree("book.epub", "outside/keep")
         let url = try epub(tree)
         #expect(RichPreview.makeView(for: url, contentType: .epub, preferences: try Prefs.isolated(), clipboard: Clipboard(pasteboard: .withUniqueName(), notifications: NotificationCenter())) is EPUBPreviewView)
@@ -371,179 +335,7 @@ struct BookPreviewTests {
         #expect(tree.text("outside/keep") == "outside/keep")
     }
 
-    @Test func comicContactSheetCopiesOnlyTheChosenPageAndUndoKeepsTheComic() async throws {
-        let tree = try TestTree("comic.cbz", "destination/keep", "sibling")
-        let chosen = try image(), other = try image(32, 8)
-        let archive = StoredZIP.make([("10.png", other), ("2.png", chosen)])
-        try archive.write(to: tree.url("comic.cbz"))
-        let environment = try PreviewEnvironment(tree)
-        environment.preferences.previewViewMode = .list
-        let browser = BrowserViewController(services: environment.services); _ = browser.view
-        let coordinator = environment.services.previews
-        coordinator.show(try #require(FileEntry(url: tree.url("comic.cbz"))), from: browser, present: false)
-        let content = try #require(coordinator.content)
-        await content.session.task?.value
-        #expect(content.mode == .icons && environment.preferences.previewViewMode == .list)
-        #expect(content.session.roots.map(\.name) == ["2.png", "10.png"])
-        let item = try #require(content.session.roots.first)
-        let pages = PreviewArchiveThumbnails(access: content.session.archiveAccess)
-        let owner = NSObject()
-        let (finished, signal) = AsyncStream<Void>.makeStream()
-        var thumbnail: NSImage?
-        pages.request(owner, item: item, pixels: 64, finished: { signal.yield() }) { thumbnail = $0 }
-        var pageEvents = finished.makeAsyncIterator()
-        _ = await pageEvents.next(); signal.finish()
-        #expect(thumbnail?.size == NSSize(width: 12, height: 24))
-        content.session.select(item)
-        await content.archiveContent.task?.value
-        let target = try #require(PreviewCommandTarget(session: content.session))
-        coordinator.perform(.copy, target: target)
-        await content.archiveContent.commandTask?.value
-        let copied = try #require(environment.services.clipboard.read().urls.first)
-        #expect(copied.lastPathComponent == "2.png")
-        #expect(try Data(contentsOf: copied) == chosen)
-        coordinator.close()
-        let undo = UndoManager()
-        let job = environment.services.transfers.enqueue([copied], to: tree.url("destination"), mode: .move, undo: undo, conflicts: .keepBoth)
-        await job.finished()
-        #expect(job.mode == .copy && job.failures.isEmpty)
-        #expect(try Data(contentsOf: tree.url("destination/2.png")) == chosen)
-        undo.undo(); await FileOps.undoWork?.value
-        #expect(TestTree.listing(of: tree.url("destination")) == ["keep"])
-        undo.redo(); await FileOps.undoWork?.value
-        #expect(TestTree.listing(of: tree.url("destination")) == ["2.png", "keep"])
-        #expect(try Data(contentsOf: tree.url("comic.cbz")) == archive)
-        #expect(tree.text("destination/keep") == "destination/keep" && tree.text("sibling") == "sibling")
-        withExtendedLifetime(environment) {}
-    }
-
-    @Test func aCoverRequestPinsTheFileBeforeQuickLookReturns() async throws {
-        let tree = try TestTree("book.epub", "replacement", "outside/keep")
-        let url = try epub(tree), entry = try #require(FileEntry(url: url))
-        let original = try Data(contentsOf: url)
-        try original.write(to: tree.url("replacement"))
-        var callback: FileThumbnails.Completion?
-        let (started, startSignal) = AsyncStream<Void>.makeStream()
-        let loader = FileThumbnails(copies: .live, containerStore: .shared, generate: { _, completion in
-            callback = completion
-            startSignal.yield()
-        })
-        let (finished, signal) = AsyncStream<Void>.makeStream()
-        var delivered = false
-        loader.request(entry, size: 64, scale: 1, finished: { signal.yield() }) { _ in delivered = true }
-        var starts = started.makeAsyncIterator()
-        _ = await starts.next(); startSignal.finish()
-        try FileManager.default.moveItem(at: url, to: tree.url("original.epub"))
-        try FileManager.default.moveItem(at: tree.url("replacement"), to: url)
-        callback?(nil, false)
-        var events = finished.makeAsyncIterator()
-        _ = await events.next(); signal.finish()
-        #expect(!delivered && loader.cached(entry, size: 64, scale: 1) == nil)
-        #expect(try Data(contentsOf: tree.url("book.epub")) == original)
-        #expect(tree.text("outside/keep") == "outside/keep")
-    }
-
-    @Test func cancelledCoverWorkersKeepTheirAllowanceUntilTheyActuallyExit() async throws {
-        let tree = try TestTree("a.cbz", "b.cbz", "c.cbz")
-        let (started, signal) = AsyncStream<String>.makeStream()
-        let gate = BookCoverReadGate(started: signal)
-        let loader = BookCoverThumbnails(reader: { source, _ in try await gate.read(source.chosen.url.lastPathComponent) })
-        let image = try PreviewPicture(self.image()).thumbnail(pixels: 64)
-        let (completed, completionSignal) = AsyncStream<Void>.makeStream()
-        var results: [Int] = []
-        for (index, name) in ["a.cbz", "b.cbz", "c.cbz"].enumerated() {
-            loader.request(id: index, source: try FileReadSource(tree.url(name)), pixels: 64) { _ in results.append(index); completionSignal.yield() }
-        }
-        var iterator = started.makeAsyncIterator()
-        let first = await iterator.next(), second = await iterator.next()
-        #expect(Set([first, second].compactMap { $0 }) == ["a.cbz", "b.cbz"])
-        loader.cancel(0)
-        #expect(await gate.names() == ["a.cbz", "b.cbz"])
-        await gate.finish("a.cbz", image)
-        #expect(await iterator.next() == "c.cbz")
-        await gate.finish("b.cbz", image); await gate.finish("c.cbz", image)
-        var completions = completed.makeAsyncIterator()
-        _ = await completions.next(); _ = await completions.next(); completionSignal.finish()
-        #expect(Set(results) == [1, 2])
-        #expect(tree.snapshot() == ["a.cbz", "b.cbz", "c.cbz"])
-        signal.finish()
-    }
-
-    @Test func draggingAPreviewedPageKeepsItsReadOnlyCopyAndRejectsOtherRowsAndReplacements() async throws {
-        let tree = try TestTree("comic.cbz", "destination/keep", "sibling")
-        let data = StoredZIP.make([("1.png", try image()), ("10.png", try image(32, 8))])
-        try data.write(to: tree.url("comic.cbz"))
-        let environment = try PreviewEnvironment(tree)
-        let browser = BrowserViewController(services: environment.services); _ = browser.view
-        let coordinator = environment.services.previews
-        coordinator.show(try #require(FileEntry(url: tree.url("comic.cbz"))), from: browser, present: false)
-        let content = try #require(coordinator.content)
-        await content.session.task?.value
-        let first = try #require(content.session.roots.first), other = try #require(content.session.roots.last)
-        #expect(content.draggedPage(first) == nil)
-        content.session.select(first); await content.archiveContent.task?.value
-        #expect(content.draggedPage(other) == nil)
-        let writer = try #require(content.outlineView(content.outline, pasteboardWriterForItem: first) as? NSURL)
-        let url = writer as URL, grid = try #require(content.grid)
-        #expect(grid.collectionView(grid.collection, pasteboardWriterForItemAt: IndexPath(item: 0, section: 0)) as? NSURL == writer)
-        #expect(ReadOnlyCopies.contains(url, copies: environment.services.copies))
-        #expect(environment.services.copies.isClipboardStaging(url))
-        #expect(!FileOps.canTrash(url, copies: environment.services.copies))
-        #expect(!ReadOnlyCopies.contains(environment.services.copies.clipboardRoot.appendingPathExtension("lookalike").appendingPathComponent("1.png"), copies: environment.services.copies))
-        let undo = UndoManager()
-        let job = environment.services.transfers.enqueue([url], to: tree.url("destination"), mode: .move, undo: undo, conflicts: .keepBoth)
-        await job.finished()
-        #expect(job.mode == .copy && job.failures.isEmpty)
-        undo.undo(); await FileOps.undoWork?.value
-        #expect(TestTree.listing(of: tree.url("destination")) == ["keep"])
-        try FileManager.default.moveItem(at: url, to: tree.url("parked.png"))
-        try Data("replacement".utf8).write(to: url)
-        #expect(content.draggedPage(first) == nil)
-        coordinator.close()
-        #expect(content.draggedPage(first) == nil && (try? String(contentsOf: url, encoding: .utf8)) == "replacement")
-        #expect(try Data(contentsOf: tree.url("comic.cbz")) == data)
-        #expect(tree.text("destination/keep") == "destination/keep" && tree.text("sibling") == "sibling")
-        withExtendedLifetime(environment) {}
-    }
-
-    @Test func contactSheetsNeverAskForPasswordsButRefreshWithTheUnlockedPassword() async throws {
-        let tree = try TestTree("comic.cbz", "sibling")
-        let bytes = try image()
-        try StoredZIP.make([("1.png", bytes)]).write(to: tree.url("comic.cbz"))
-        let access = PreviewArchiveAccess(reader: { source, member, directory, password in
-            if member != nil, password != "fixture" { throw ArchiveReadError.password }
-            return try await ArchiveReader.read(source, member: member, directory: directory)
-        })
-        access.reset(try FileReadSource(tree.url("comic.cbz")))
-        var prompts = 0
-        access.requestPassword = { _ in prompts += 1; return "fixture" }
-        let pages = PreviewArchiveThumbnails(access: access), owner = NSObject()
-        let item = PreviewItem(.member(ArchiveNode(name: "1.png", isDirectory: false, size: Int64(bytes.count)), path: ["1.png"]))
-        let (finished, signal) = AsyncStream<Void>.makeStream()
-        var result: NSImage?
-        pages.request(owner, item: item, pixels: 64, finished: { signal.yield() }) { result = $0 }
-        var events = finished.makeAsyncIterator(); _ = await events.next()
-        #expect(result == nil && prompts == 0)
-        _ = try await access.read(member: ["1.png"])
-        pages.request(owner, item: item, pixels: 64, finished: { signal.yield() }) { result = $0 }
-        _ = await events.next(); signal.finish()
-        #expect(result != nil && prompts == 1)
-        #expect(tree.snapshot() == ["comic.cbz", "sibling"] && tree.text("sibling") == "sibling")
-    }
 }
-
-private actor BookCoverReadGate {
-    let started: AsyncStream<String>.Continuation
-    private var pending: [String: CheckedContinuation<CGImage, Error>] = [:]
-    init(started: AsyncStream<String>.Continuation) { self.started = started }
-    func read(_ name: String) async throws -> CGImage {
-        try await withCheckedThrowingContinuation { pending[name] = $0; started.yield(name) }
-    }
-    func names() -> Set<String> { Set(pending.keys) }
-    func finish(_ name: String, _ image: CGImage) { pending.removeValue(forKey: name)?.resume(returning: image) }
-}
-
-private final class BookImageChanges { var count = 0 }
 
 private extension EPUBChapterDocument {
     func waitForSharedReaders() async throws {

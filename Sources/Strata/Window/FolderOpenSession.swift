@@ -16,14 +16,14 @@ import Foundation
     isolated deinit { cancel() }
 
     @discardableResult
-    func open(notice: Notice? = nil, operation: @escaping @Sendable () async throws -> URL,
-              receive: @escaping (Result<URL, Error>) -> Void) -> Task<Void, Never> {
+    func open<Value: Sendable>(notice: Notice? = nil, operation: @escaping @Sendable () async throws -> Value,
+                               receive: @escaping (Result<Value, Error>) -> Void) -> Task<Void, Never> {
         cancel()
         let request = Request()
         self.request = request
         self.notice = notice
         let work = Task { [weak self] in
-            let result: Result<URL, Error>
+            let result: Result<Value, Error>
             do {
                 try Task.checkCancellation()
                 result = .success(try await operation())

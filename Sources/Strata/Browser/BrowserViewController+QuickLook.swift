@@ -4,35 +4,31 @@ import Quartz
 extension BrowserViewController {
     @objc func toggleQuickLook(_ sender: Any?) {
         guard !inlineRename.isEditing else { return }
-        if services.previews.isOpen {
-            services.previews.close()
-            return
-        }
         if QLPreviewPanel.sharedPreviewPanelExists(), let panel = QLPreviewPanel.shared(), panel.isVisible {
             panel.orderOut(nil)
             return
         }
-        if selectedEntries.count == 1, let entry = selectedEntries.first {
-            services.previews.show(entry, from: self)
-        } else if let panel = QLPreviewPanel.shared() {
-            openQuickLook { [weak self] in
-                guard let self else { return }
-                _ = services.windows.preview(panel, focusView)
-            }
+        openQuickLook { [weak self] in
+            guard let self else { return }
+            services.windows.showQuickLook(focusView)
         }
     }
 
-    func openQuickLook(showPanel: @escaping () -> Void = { QLPreviewPanel.shared()?.makeKeyAndOrderFront(nil) }) {
-        let urls = Self.quickLookItems(selectedEntries)
-        let selectedKeys = Set(selectedURLs.map(Self.key))
+    func openQuickLook(showPanel: @escaping () -> Void) {
+        let urls = selectedURLs
+        let selectedKeys = Set(urls.map(Self.key))
         guard !selectedKeys.isEmpty else { return }
-        let hadWindow = viewIfLoaded?.window != nil
-        // A container's file being fetched: show it once it's here.
         fetches.afterFetching(urls) { [weak self] in
-            guard let self, (!hadWindow || viewIfLoaded?.window?.isVisible == true),
-                  !Set(selectedURLs.map(Self.key)).isDisjoint(with: selectedKeys) else { return }
+            guard let self, !inlineRename.isEditing,
+                  Set(selectedURLs.map(Self.key)) == selectedKeys else { return }
             showPanel()
         }
+    }
+
+    func reloadQuickLook() {
+        guard QLPreviewPanel.sharedPreviewPanelExists(), let panel = QLPreviewPanel.shared(),
+              panel.isVisible, panel.dataSource === self else { return }
+        panel.reloadData()
     }
 
     // Quick Look calls these on the main thread; the SDK just doesn't annotate them.
@@ -66,16 +62,12 @@ extension BrowserViewController: QLPreviewPanelDataSource, QLPreviewPanelDelegat
     }
 
     func previewPanel(_ panel: QLPreviewPanel!, handle event: NSEvent!) -> Bool {
-        handlePreviewNavigationKey(event, in: panel)
-    }
-
-    func handlePreviewNavigationKey(_ event: NSEvent?, in previewWindow: NSWindow?) -> Bool {
-        guard let event, event.type == .keyDown, let key = event.specialKey,
+        guard selectedURLs.count == 1, let event, event.type == .keyDown, let key = event.specialKey,
               [.leftArrow, .rightArrow, .downArrow, .upArrow].contains(key),
               event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
               !inlineRename.isEditing, viewIfLoaded?.window?.attachedSheet == nil,
-              previewWindow?.attachedSheet == nil,
-              (previewWindow?.firstResponder as? NSText)?.isEditable != true,
+              panel?.attachedSheet == nil,
+              (panel?.firstResponder as? NSText)?.isEditable != true,
               !(viewIfLoaded?.window?.firstResponder is NSText) else { return false }
         focusView.keyDown(with: event)
         return true

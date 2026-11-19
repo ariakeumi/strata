@@ -9,7 +9,7 @@ a caller forget the owner's, and nothing notices: the code then reads or changes
   those, on its own type, so this check sees it. The general pasteboard counts too: each window's Clipboard owns one.
 - A fallback: `owner?.copies ?? .live`, taken when an owner is gone or wasn't given.
 - A direct use: `TagStore.shared.tags(for:)` in a pane, or an argument passing one: `ProjectInfo.load(store: .shared)`.
-  The application's own code (App, Settings, Dock, AppUpdates and main.swift) is where the app's instances are made
+  The application's own code (App, Settings, Dock and main.swift) is where the app's instances are made
   and used for the app as a whole, so direct uses there count only as defaults or fallbacks; so does the statement
   defining an instance (`static let shared = …`, to its closing parenthesis).
 - An observer of every poster: `addObserver(…, name: .tagsLoaded, object: nil)` for a notification its owner posts
@@ -41,7 +41,7 @@ DEFINITION = re.compile(r"\bstatic\s+(?:let|var)\s+(?:shared|live)\b")
 OWNED_POST = re.compile(r"\bpost\(name:\s*\.([A-Za-z0-9]+),\s*object:\s*self\b")
 ANY_POSTER = re.compile(r"\baddObserver\((?:self,\s*selector:\s*#selector\((?:[^()]|\([^()]*\))*\),\s*)?"
                         r"(?:forName|name):\s*\.([A-Za-z0-9]+),\s*object:\s*nil\b")
-APPLICATION = {"App", "Settings", "Dock", "AppUpdates"}
+APPLICATION = {"App", "Settings", "Dock"}
 # The system's own (NSWorkspace, QLThumbnailGenerator…) aren't an environment's to pass. The general pasteboard is:
 # each window's Clipboard owns the one it uses.
 SYSTEM = re.compile(r"^(?:NS|QL|UN|CG|CF|AV|SC|Sec)[A-Z]")

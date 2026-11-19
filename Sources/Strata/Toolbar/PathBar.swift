@@ -20,14 +20,6 @@ final class PathBar: NSView, NSTextFieldDelegate {
     private var title: (text: String, symbol: String)?
     var isShowingTitle: Bool { title != nil }
 
-    /// Root of the git work tree being shown, if any; the branch pill follows its crumb.
-    var gitRoot: URL? {
-        didSet { if gitRoot?.path != oldValue?.path, !isEditing, url != nil { rebuild() } }
-    }
-
-    /// Set its `model` from the git status; hidden while the model is nil.
-    let branchPill: GitBranchPill
-
     private let crumbs = PathBreadcrumbs()
     private let field = NSTextField()
     private(set) var isEditing = false
@@ -46,14 +38,13 @@ final class PathBar: NSView, NSTextFieldDelegate {
 
     var crumbButtons: [CrumbButton] { crumbs.buttons }
 
-    init(frame: NSRect = .zero, preferences: Prefs, places: PlaceChecks, index: FileIndex, copies: CopyProviders,
-         names: FolderNames, clipboard: Clipboard, embedded: Bool = false) {
-        branchPill = GitBranchPill(clipboard: clipboard)
+    init(frame: NSRect = .zero, preferences: Prefs, places: PlaceChecks, copies: CopyProviders,
+         names: FolderNames, embedded: Bool = false) {
         self.copies = copies
         self.names = names
         self.embedded = embedded
         suggestionList = PathSuggestionList(copies: copies, names: names)
-        suggestions = PathSuggestions(preferences: preferences, places: places, index: index)
+        suggestions = PathSuggestions(preferences: preferences, places: places)
         super.init(frame: frame)
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true
@@ -149,7 +140,6 @@ final class PathBar: NSView, NSTextFieldDelegate {
         }
         guard let url else { crumbs.show([]); return }
         let parts = Self.components(of: url, copies: copies, names: names)
-        let repoRootPath = gitRoot?.lexicallyStandardized.path
         var steps: [PathBreadcrumbs.Step] = []
         for (index, part) in parts.enumerated() {
             let isLast = index == parts.count - 1
@@ -159,10 +149,6 @@ final class PathBar: NSView, NSTextFieldDelegate {
             crumb.action = #selector(crumbClicked(_:))
             crumb.destination = part.url
             var step = PathBreadcrumbs.Step(button: crumb)
-            let isRepoRoot = part.url.lexicallyStandardized.path == repoRootPath
-            if isRepoRoot {
-                step.branch = branchPill
-            }
             if !isLast {
                 let name = part.title.isEmpty ? part.url.lastPathComponent : part.title
                 let chevron = ChevronButton(folder: part.url, name: name) { [weak self] target in

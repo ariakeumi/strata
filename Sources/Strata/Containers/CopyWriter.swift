@@ -162,14 +162,9 @@ package nonisolated enum CopyWriter {
     /// items no longer there removed. Names the copy's disk can't tell apart from an earlier one are left out. A link
     /// leading to a folder gets that folder made (empty, inside `top`) so it shows and opens as one. Returns
     /// placeholders to fetch right away.
-    package static func apply(_ entries: [ListedEntry], contents: [String: Data], to folder: URL, containerPath: String, top: URL? = nil,
-                      expected: FileIdentity? = nil) throws -> [URL] {
+    package static func apply(_ entries: [ListedEntry], contents: [String: Data], to folder: URL, containerPath: String, top: URL? = nil) throws -> [URL] {
         let fd = open(folder.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else { throw CocoaError(.fileReadNoPermission) }
-        if let expected {
-            var opened = stat()
-            guard fstat(fd, &opened) == 0, FileIdentity.from(opened) == expected else { close(fd); throw POSIXError(.ESTALE) }
-        }
         let folded = folding(in: fd)
         defer {
             // Writing in it changed its date; the container's comes back.

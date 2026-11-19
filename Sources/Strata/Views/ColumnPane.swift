@@ -72,7 +72,7 @@ final class ColumnPane: NSView, NSTableViewDataSource, NSTableViewDelegate {
         typography = FileViewTypography(preferences: controller.preferences)
         directoryReads = DirectoryReadSession(reader: controller.directoryReader)
         super.init(frame: .zero)
-        setUpTable(label: controller.names.name(folder))
+        setUpTable(label: folder.isFileURL ? controller.names.name(folder) : folder.host() ?? "")
         setUpScrollView()
         setUpStatus()
         setUpDivider()
@@ -387,10 +387,9 @@ final class ColumnPane: NSView, NSTableViewDataSource, NSTableViewDelegate {
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let cell = tableView.makeView(withIdentifier: ColumnCellView.identifier, owner: nil) as? ColumnCellView ?? ColumnCellView()
         let entry = entries[row]
-        let git = statuses.git
         cell.configure(entry, matches: matches[entry.url.fileViewKey] ?? [],
-                       dimmed: entry.isHidden || clipboard.isCut(entry.url) || git.isIgnored(entry.url),
-                       git: git.badge(for: entry.url, isDirectory: entry.isDirectory), tags: statuses.tags.tags(for: entry.url),
+                       dimmed: entry.isHidden || clipboard.isCut(entry.url),
+                       tags: statuses.tags.tags(for: entry.url),
                        cloud: statuses.cloud.status(for: entry.url), scale: tableView.window?.backingScaleFactor ?? 2,
                        preferences: preferences, typography: typography, thumbnails: thumbnails)
         return cell
@@ -409,11 +408,13 @@ final class ColumnPane: NSView, NSTableViewDataSource, NSTableViewDelegate {
     // Drag and drop
 
     func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
-        entries.indices.contains(row) ? ContainerDragItem.writer(for: entries[row].url, copies: copies) : nil
+        guard entries.indices.contains(row), entries[row].url.isFileURL else { return nil }
+        return ContainerDragItem.writer(for: entries[row].url, copies: copies)
     }
 
     func tableView(_ tableView: NSTableView, validateDrop info: NSDraggingInfo, proposedRow row: Int,
                    proposedDropOperation dropOperation: NSTableView.DropOperation) -> NSDragOperation {
+        guard folder.isFileURL else { return [] }
         let urls = FileDrop.urls(info, copies: copies)
         let resting = !urls.isEmpty && dropOperation == .on && row >= 0 && row < entries.count && entries[row].isFolder
             && !FileDrop.isInside(urls, entries[row].url, during: info)
@@ -431,6 +432,7 @@ final class ColumnPane: NSView, NSTableViewDataSource, NSTableViewDelegate {
     func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo, row: Int,
                    dropOperation: NSTableView.DropOperation) -> Bool {
         springLoader.cancel()
+        guard folder.isFileURL else { return false }
         let urls = FileDrop.urls(info, copies: copies)
         let target = row >= 0 && row < entries.count && dropOperation == .on && entries[row].isFolder ? entries[row].url : folder
         return controller?.drop(urls, onto: target, from: self, info: info) ?? false

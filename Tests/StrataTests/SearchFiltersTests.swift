@@ -17,14 +17,14 @@ struct SearchFiltersTests {
         draft.size = "1mb..2mb"
         let updated = try #require(draft.query())
         #expect(updated == #""Client \"A\"" !draft in:work regex:"a\\b.*" ext:pdf ext:png size:"1mb..2mb""#)
-        let query = IndexQuery.parse(updated)
+        let query = SearchQuery.parse(updated)
         #expect(query.minSize == 1_000_000 && query.maxSize == 2_000_000)
         #expect(query.extensions == ["pdf", "png"])
         #expect(query.regex != nil && query.excludedTerms.count == 1 && query.scopeNames.count == 1)
         let phrase = SearchTerms.split(text).first?.value
         #expect(phrase == "Client \"A\"")
-        #expect(IndexQuery.tokenize(SearchTerms.quote("name \\")) == ["name \\"])
-        #expect(IndexQuery.tokenize(#"regex:"\d+\.txt""#) == [#"regex:\d+\.txt"#])
+        #expect(SearchQuery.tokenize(SearchTerms.quote("name \\")) == ["name \\"])
+        #expect(SearchQuery.tokenize(#"regex:"\d+\.txt""#) == [#"regex:\d+\.txt"#])
     }
 
     @Test func naturalFiltersBecomeEquivalentExplicitFiltersWhenEdited() throws {
@@ -34,7 +34,7 @@ struct SearchFiltersTests {
         #expect(draft.query() == text)
         draft.size = ">20mb"
         let updated = try #require(draft.query())
-        let parsed = IndexQuery.parse(updated)
+        let parsed = SearchQuery.parse(updated)
         #expect(parsed.extensions == natural.query.extensions)
         #expect(parsed.modifiedAfter == natural.query.modifiedAfter && parsed.modifiedBefore == natural.query.modifiedBefore)
         #expect(parsed.minSize == 20_000_001)

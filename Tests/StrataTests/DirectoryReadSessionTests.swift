@@ -134,24 +134,24 @@ struct DirectoryReadSessionTests {
         let tree = try TestTree("a.txt", "b.txt")
         let a = try #require(FileEntry(url: tree.url("a.txt")))
         let b = try #require(FileEntry(url: tree.url("b.txt")))
-        for presentation in 0..<3 {
+        for showingMessage in [false, true] {
             let reads = Reads()
             defer { reads.stop() }
             let browser = browser(reads)
             browser.load(tree.root)
             let work = try #require(browser.directoryReads.task)
             let request = try await reads.request(0)
-            switch presentation {
-            case 0: browser.showResults([b], total: 1)
-            case 1: browser.showGroups([(title: "Group", detail: "", entries: [b])], summary: "")
-            default: browser.showMessage(symbol: "magnifyingglass", title: "Waiting")
+            if showingMessage {
+                browser.showMessage(symbol: "magnifyingglass", title: "Waiting")
+            } else {
+                browser.showResults([b], total: 1)
             }
             request.finish(.success([a]))
             await work.value
             #expect(browser.isShowingResults)
             #expect(!browser.topLevelEntries.contains { $0.url == a.url })
             #expect(browser.loadError == nil)
-            if presentation != 2 {
+            if !showingMessage {
                 browser.select([b.url])
                 #expect(browser.selectedURLs == [b.url])
             }
@@ -302,7 +302,7 @@ struct DirectoryReadSessionTests {
         #expect(tree.snapshot() == ["a.txt", "b.txt"])
     }
 
-    @Test func pendingSelectionsApplyToRefreshedResultsAndGroups() throws {
+    @Test func pendingSelectionsApplyToRefreshedResults() throws {
         let tree = try TestTree("a.txt", "b.txt")
         let reads = Reads()
         defer { reads.stop() }
@@ -316,10 +316,6 @@ struct DirectoryReadSessionTests {
         browser.pending.selection = []
         browser.showResults(entries, total: 2)
         #expect(browser.selectedURLs.isEmpty && browser.pending.selection == nil)
-        browser.showGroups([(title: "Files", detail: "", entries: entries)], summary: "")
-        browser.pending.selection = [entries[0].url]
-        browser.showGroups([(title: "Files", detail: "", entries: entries)], summary: "")
-        #expect(browser.selectedURLs == [entries[0].url] && browser.pending.selection == nil)
         #expect(tree.snapshot() == ["a.txt", "b.txt"])
     }
 
@@ -407,8 +403,8 @@ struct DirectoryReadSessionTests {
         try await reads.request(0).finish(.success([entry]))
         await initial.value
         // All search controls write the pane's destination, including changes that keep the same history entry.
-        let original = Destination.search("a", scope: nil)
-        for changed in [Destination.search("b", scope: nil), .search("a", scope: tree.root), .search("case:a", scope: nil)] {
+        let original = Destination.search("a", scope: tree.url("folder"))
+        for changed in [Destination.search("b", scope: tree.url("folder")), .search("a", scope: tree.root), .search("case:a", scope: tree.url("folder"))] {
             pane.navigate(to: original)
             browser.showResults([entry], total: 1)
             let completion = controller.selectionAfterOperation()
@@ -417,9 +413,9 @@ struct DirectoryReadSessionTests {
             pane.navigate(to: changed)
             #expect(pane.navigationRevision == revision + 1 && browser.pending.selection == nil)
             pane.navigate(to: original)
-            let searchGeneration = pane.search.latest
+            let searchTask = pane.search.task
             completion([entry.url])
-            #expect(pane.search.latest == searchGeneration && browser.pending.selection == nil)
+            #expect(pane.search.task == searchTask && browser.pending.selection == nil)
             #expect(browser.directoryReads.task == nil)
             let unchanged = pane.navigationRevision
             pane.navigate(to: original)
@@ -544,7 +540,7 @@ struct DirectoryReadSessionTests {
         var paneIndex: Int { self == .secondPane || self == .expandedSecondPane ? 1 : 0 }
     }
 
-    @Test(arguments: ["size", "index", "media"], RenamePlace.allCases)
+    @Test(arguments: ["size", "media"], RenamePlace.allCases)
     private func metadataDoesNotEndAnInlineRename(update: String, place: RenamePlace) async throws {
         let prefix = place.expanded ? "parent/" : ""
         let tree = try TestTree("\(prefix)folder/child.txt", "\(prefix)folder-other/", "\(prefix)movie.mov")
@@ -577,7 +573,6 @@ struct DirectoryReadSessionTests {
         field.stringValue = "partially typed"
         editor.string = "partially typed"
         switch update {
-        case "index": browser.indexChanged()
         case "media": browser.mediaInfo.onUpdate?(entry)
         default: browser.sizer.onUpdate?(entry.url)
         }
@@ -697,17 +692,15 @@ struct DirectoryReadSessionTests {
         let editingCell = try #require(pane.tableView.view(atColumn: 0, row: row, makeIfNecessary: true) as? ColumnCellView)
         #expect(editingCell.nameCell.imageView?.alphaValue == 1)
         try #require(pane.tableView.rows(in: pane.tableView.visibleRect).length > 0)
-        for git in [false, true] {
-            // AppKit can replace a cell during a reload rather than reuse the hidden label's old cell.
-            let oldCell = try #require(pane.tableView.view(atColumn: 0, row: row, makeIfNecessary: true) as? ColumnCellView)
-            oldCell.identifier = nil
-            if git { browser.gitStatusChanged(Notification(name: .gitStatusDidChange, userInfo: ["root": tree.root])) }
-            else { browser.tagsChanged() }
-            let cell = try #require(pane.tableView.view(atColumn: 0, row: row, makeIfNecessary: true) as? ColumnCellView)
-            #expect(cell.nameCell.textField?.isHidden == true)
-            #expect(field.currentEditor() === editor)
-            #expect(editor.string == "partially typed")
-        }
+        // AppKit can replace a cell during a reload rather than reuse the hidden label's old cell.
+        let oldCell = try #require(pane.tableView.view(atColumn: 0, row: row, makeIfNecessary: true) as? ColumnCellView)
+        oldCell.identifier = nil
+        browser.tagsChanged()
+        let refreshedCell = try #require(pane.tableView.view(atColumn: 0, row: row, makeIfNecessary: true) as? ColumnCellView)
+        #expect(refreshedCell.nameCell.textField?.isHidden == true)
+        #expect(field.currentEditor() === editor)
+        #expect(editor.string == "partially typed")
+
         field.cancel()
         pane.tableView.layoutSubtreeIfNeeded()
         let cell = try #require(pane.tableView.view(atColumn: 0, row: row, makeIfNecessary: true) as? ColumnCellView)

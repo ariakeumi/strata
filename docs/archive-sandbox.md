@@ -5,15 +5,15 @@ OneNote package, an EPUB or a comic book, preview what's in it, and copy just th
 from anywhere, and the code that reads them, macOS's libarchive, is a large C library. If a crafted archive ever found a
 bug in it, that bug must not be able to reach your files.
 
-So Strata doesn't read archives itself. Listing one in the preview pane, looking inside it with Space, copying items
-out of it, checking it before Extract and Extract itself all happen in a separate worker process that runs in an App
+So Strata doesn't read archives itself. Listing one in the preview pane, reading an archive member for a format-specific preview,
+checking it before Extract and Extract itself all happen in a separate worker process that runs in an App
 Sandbox, lives for exactly one read, and can be stopped the moment it isn't needed. The worker can't write a file, so
 for Extract it sends what it read and Strata writes the files, checking everything it's sent. This page explains how
 that works and why it ended up this way.
 
 ## Where we started
 
-Space previews already ran each read in its own process. Strata started a small worker for it, handed it the archive
+Strata’s former Space preview browser ran each read in its own process. Strata started a small worker for it, handed it the archive
 as an open file, and read its output through a pipe. The worker locked itself down at startup with `sandbox_init` and
 a profile that denied almost everything: no files, no network, no other programs. The preview pane's listing and the
 check before Extract were another story: they ran macOS's `tar` and `zipinfo` with your access and parsed their text
@@ -63,19 +63,15 @@ links only that, so the parser isn't even in its process.
    when released, and it never appears in a message, an argument or a log.
 2. **The service** starts the worker with exactly those three descriptors: the request as standard input, the archive
    as descriptor 3, the output pipe as standard output. The worker gets nothing else from the service.
-3. **The worker** sets its limits, reads the request, lists the archive or streams the chosen file, or for Extract
-   every entry, into the output pipe, and exits. Its exit status is the result: done, wrong password, too large, unsafe
+3. **The worker** sets its limits, reads the request, lists the archive or reads the chosen member, or for Extract
+   streams every entry, into the output pipe, and exits. Its exit status is the result: done, wrong password, too large, unsafe
    paths, unreadable.
 4. **The service** passes that status back to the app.
 5. **The app** reads the output as it arrives and accepts only the worker's own length-prefixed records, at most 60 MB
-   except for Extract's and a copy of one file out of Space, for its preview or an export. That copy, up to 256 MB,
-   goes to its file as it comes, never more of it in memory than a chunk: the worker allows it only for a request that
-   streams one file, and for a preview the app takes the file's whole size from the preview cache before writing its
-   first byte.
+   except for Extract's, which the app writes as it receives each entry.
 
 **Listing.** A listing that reaches 50,000 entries or 60 MB of records ends with a mark saying there's more, and one
 stopped by its time or by an unsafe entry keeps the rows it read: the preview pane shows them with a note saying why.
-A Space preview, which copies from its listing, refuses an archive it can't list completely.
 
 **Checking before Extract.** Before Extract unpacks an archive, or opens it as a folder, a worker counts what it
 holds: its entries, the size of its files, and whether any entry is encrypted. It sends no listing, so none of a
@@ -250,8 +246,8 @@ Apple moves archive work out of the apps that ask for it too, but not the same w
 
 | | Strata | Apple |
 |---|---|---|
-| Previews | Space reads each member through a fresh sandboxed worker | Quick Look preview extensions run in a sandbox with no network, by design [1, 2] |
-| Looking inside an archive | The preview pane, Space and copying out all read through a fresh worker per read, which can't look up system services | Finder doesn't look inside archives: double-clicking one hands it to Archive Utility to unpack [3] |
+| Previews | Strata’s format-specific previews read archive members through a fresh sandboxed worker | Quick Look preview extensions run in a sandbox with no network, by design [1, 2] |
+| Looking inside an archive | Strata’s archive listing and extraction each use a fresh worker that can’t look up system services | Finder doesn't look inside archives: double-clicking one hands it to Archive Utility to unpack [3] |
 | Unpacking | Extract reads through a fresh worker too, and Strata writes what it sends, checking every item | Archive Utility hands the unpacking to separate helper processes, an ArchiveService and a SandboxedServiceRunner [3] |
 
 We couldn't find how tightly Archive Utility's helpers are confined, but its history shows where unpacking goes wrong:

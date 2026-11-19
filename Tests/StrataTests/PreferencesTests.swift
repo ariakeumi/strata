@@ -135,7 +135,6 @@ struct PreferencesTests {
         prefs.hiddenListColumns = ["size", "created"]
         prefs.showListNameExtensions = false
         prefs.iconViewOptions = .init(showsInfo: false, folderInfo: .size)
-        prefs.choose(.init(palette: .teal, tintsWindow: false), among: .shared)
         prefs.lastLocation = URL(fileURLWithPath: "/one", isDirectory: true)
         let reopened = Prefs(defaults: try #require(UserDefaults(suiteName: prefs.domainName)),
                              domainName: prefs.domainName)
@@ -145,7 +144,6 @@ struct PreferencesTests {
         #expect(reopened.hiddenListColumns == ["size", "created"])
         #expect(!reopened.showListNameExtensions)
         #expect(reopened.iconViewOptions == .init(showsInfo: false, folderInfo: .size))
-        #expect(reopened.colorThemeOptions(among: .shared) == .init(palette: .teal, tintsWindow: false))
         #expect(reopened.lastLocation?.path == "/one")
         #expect(prefs.defaults.stringArray(forKey: "collapsedSidebarSections") == ["favorites", "volumes"])
     }
@@ -155,7 +153,7 @@ struct PreferencesTests {
         let second = try Prefs.isolated()
         let events = Mutex<[String]>([])
         let names: [Notification.Name] = [.prefsChanged, .appearanceChanged, .favoritesChanged,
-                                         .viewOptionsChanged, .listColumnsChanged, .listNamesChanged, .colorThemeChanged]
+                                         .viewOptionsChanged, .listColumnsChanged, .listNamesChanged]
         var observers: [(NotificationCenter, NSObjectProtocol)] = []
         for (label, center) in [("first", first.notifications), ("second", second.notifications),
                                 ("global", NotificationCenter.default)] {
@@ -174,15 +172,12 @@ struct PreferencesTests {
         first.hiddenListColumns = ["size"]
         first.showListNameExtensions = false
         first.showListNameExtensions = false
-        first.choose(.init(palette: .rose), among: .shared)
-        first.choose(.init(palette: .rose), among: .shared)
         #expect(events.withLock { $0 } == names.map { "first:" + $0.rawValue })
         #expect(!second.showHidden)
         #expect(second.theme == 0)
         #expect(second.favoritePaths == nil)
         #expect(second.iconViewOptions == IconViewOptions())
         #expect(second.showListNameExtensions)
-        #expect(second.colorThemeOptions(among: .shared) == ColorThemeOptions())
         #expect(second.defaults.persistentDomain(forName: second.domainName)?.isEmpty ?? true)
         second.favoritePaths = []
         #expect(first.favoritePaths == ["/one"])

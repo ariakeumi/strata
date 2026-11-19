@@ -137,18 +137,6 @@ struct SecurityReviewTests {
         }
     }
 
-    @Test func gitFilterNamesMustBeRepresentableExactlyAndAllScopesAreDisabled() {
-        for scope in ["local", "global", "system", "command", "worktree", "future"] {
-            let result = GitRunner.filterOverrides(Data("\(scope)\0filter.lfs.clean\0".utf8))
-            #expect(result?.contains("filter.lfs.clean=") == true)
-            #expect(result?.contains("filter.lfs.process=") == true)
-            #expect(result?.contains("filter.lfs.required=false") == true)
-        }
-        let bytes = Array("local\0filter.evil".utf8) + [0x80] + Array(".clean\0".utf8)
-        #expect(GitRunner.filterOverrides(Data(bytes)) == nil)
-        #expect(GitRunner.filterOverrides(Data("local\0filter.a=b.clean\0".utf8)) == nil)
-    }
-
     @Test func deletionKeepsReplacementsAcrossTheConfirmation() async throws {
         let tree = try TestTree("chosen/", "chosen/file", "keep")
         let request = try #require(await Deletion.plan([tree.url("chosen")], copies: .live).choices.first)
@@ -315,50 +303,4 @@ struct SecurityReviewTests {
         #expect(files == ["/file": "complete", "/sibling": "keep"])
     }
 
-    @Test(arguments: ["entries", "names"])
-    func indexCapacityRefusalsLeaveAllColumnsConsistent(_ limit: String) {
-        let store = IndexStore()
-        store.write { storage in
-            let root = storage.addRoot(path: "/fixture", mtime: 0)
-            storage.entryLimit = limit == "entries" ? 2 : 100
-            storage.nameByteLimit = storage.names.count + (limit == "names" ? 1 : 100)
-            let items = (0..<2).map { ScannedItem(nameOffset: $0, nameLength: 1, isDirectory: false, isPackage: false,
-                isSymlink: false, isHidden: false, isMountPoint: false, size: 1, mtime: 0) }
-            let refused = [UInt8]("ab".utf8).withUnsafeBytes { storage.appendChildren(items, nameBuffer: $0, of: root) }
-            #expect(refused.isEmpty && storage.capacityExceeded)
-            #expect(storage.count == 1 && storage.names.count == 8 && storage.children(of: root).isEmpty)
-            let accepted = [UInt8]("a".utf8).withUnsafeBytes { storage.appendChildren([items[0]], nameBuffer: $0, of: root) }
-            #expect(accepted.count == 1 && storage.count == 2 && storage.name(1) == "a")
-            #expect(storage.addRoot(path: "/another", mtime: 0) == -1)
-            #expect(storage.count == 2 && storage.nameStart.count == 2)
-        }
-    }
-
-    @Test func bulkDirectoryRecordsValidateEveryLengthAndNameReference() {
-        var returned = attribute_set_t()
-        returned.commonattr = attrgroup_t(ATTR_CMN_NAME)
-        let referenceOffset = 4 + MemoryLayout<attribute_set_t>.size
-        var reference = attrreference_t(attr_dataoffset: Int32(MemoryLayout<attrreference_t>.size), attr_length: 2)
-        var length = UInt32(referenceOffset + MemoryLayout<attrreference_t>.size + 2)
-        var good = withUnsafeBytes(of: &length) { Array($0) }
-        good += withUnsafeBytes(of: &returned) { Array($0) }
-        good += withUnsafeBytes(of: &reference) { Array($0) } + [97, 0]
-        for damage in ["none", "zero", "short", "long", "negative", "nameLength", "missingNul"] {
-            var bytes = good
-            func set<T>(_ value: T, at offset: Int) { withUnsafeBytes(of: value) { bytes.replaceSubrange(offset..<(offset + $0.count), with: $0) } }
-            switch damage {
-            case "zero": set(UInt32(0), at: 0)
-            case "short": set(UInt32(4), at: 0)
-            case "long": set(UInt32.max, at: 0)
-            case "negative": set(Int32.min, at: referenceOffset)
-            case "nameLength": set(UInt32.max, at: referenceOffset + 4)
-            case "missingNul": bytes[bytes.count - 1] = 98
-            default: break
-            }
-            var items: [ScannedItem] = [], names: [UInt8] = []
-            let result = bytes.withUnsafeBytes { BulkDirectoryReader.parse($0, count: 1, items: &items, names: &names) }
-            #expect(result == (damage == "none" ? 0 : EIO))
-            #expect(items.count == (damage == "none" ? 1 : 0))
-        }
-    }
 }

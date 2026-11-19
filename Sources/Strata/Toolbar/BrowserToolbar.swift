@@ -3,7 +3,7 @@ import AppKit
 /// AppKit owns customization and drawing; only the saved layout belongs to the window's preferences.
 final class BrowserToolbar {
     static let defaults: [NSToolbarItem.Identifier] = [
-        .toggleSidebar, .sidebarMode, .sidebarTrackingSeparator, .back, .forward, .flexibleSpace, .pathBar,
+        .sidebarTrackingSeparator, .back, .forward, .flexibleSpace, .pathBar,
         .flexibleSpace, .viewMode, .dualPane, .share, .search, .transfers, .inspectorTrackingSeparator, .toggleInspector,
     ]
     static let commands: [StrataCommand] = [

@@ -12,17 +12,6 @@ import Testing
 @testable import StrataSearch
 
 struct FileCommandOwnershipTests {
-    @Test func anEnvironmentsIndexesAreItsOwnAndSaveIntoItsStorage() async throws {
-        let environment = try IndependentEnvironment()
-        let services = environment.services, folder = environment.storage.directory.path + "/"
-        #expect(services.index !== FileIndex.shared && services.contentIndex !== SemanticIndex.shared)
-        let config = await services.index.currentConfig()
-        #expect(config.storage === environment.storage && config.file.path.hasPrefix(folder))
-        let content = await services.contentIndex.configuration
-        #expect(content.storage === environment.storage && content.storeDirectory.path.hasPrefix(folder))
-        #expect(content.roots.isEmpty)
-    }
-
     private func undoManager() -> UndoManager {
         let undo = UndoManager()
         undo.groupsByEvent = false
@@ -301,7 +290,6 @@ struct FileCommandOwnershipTests {
         #expect(configured.transfers === queue && configured.preferences === queue.preferences)
         #expect(configured.files.history === queue.history)
         let inspector = InspectorViewController(services: a.services)
-        #expect(inspector.projectView.files === a.services.files)
         #expect(inspector.projectView.preferences === queue.preferences)
         #expect(configured.copies.containerCopies === queue.copies.containerCopies)
         #expect(configured.copies.remoteCopies.root == queue.copies.remoteCopies.root)

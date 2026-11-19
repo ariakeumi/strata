@@ -126,6 +126,7 @@ final class SelectionReports {
 /// Icons and Gallery: their items, found by URL, dragged out through their copy providers and dropped onto (a folder
 /// springs open) or between, into the folder shown; and renaming one.
 protocol FileItemCollection: FileCollectionController {
+    func releaseListing()
     var entries: [FileEntry] { get }
     var directory: URL? { get }
     var copies: CopyProviders { get }
@@ -136,12 +137,13 @@ protocol FileItemCollection: FileCollectionController {
 
 extension FileItemCollection {
     func pasteboardWriter(at indexPath: IndexPath) -> NSPasteboardWriting? {
-        guard indexPath.count == 2, entries.indices.contains(indexPath.item) else { return nil }
+        guard indexPath.count == 2, entries.indices.contains(indexPath.item), entries[indexPath.item].url.isFileURL else { return nil }
         return ContainerDragItem.writer(for: entries[indexPath.item].url, copies: copies)
     }
 
     func validateDrop(_ info: NSDraggingInfo, proposedIndexPath: AutoreleasingUnsafeMutablePointer<NSIndexPath>,
                       dropOperation: UnsafeMutablePointer<NSCollectionView.DropOperation>) -> NSDragOperation {
+        guard directory?.isFileURL != false else { endDrop(); return [] }
         let urls = FileDrop.urls(info, copies: copies)
         let proposed = proposedIndexPath.pointee as IndexPath
         let index = proposed.count == 2 ? proposed.item : -1
@@ -166,7 +168,7 @@ extension FileItemCollection {
     }
 
     func dropIntoFolderShown(_ urls: [URL], info: NSDraggingInfo) -> NSDragOperation {
-        guard !urls.isEmpty, let directory else { return hideDropHighlight() }
+        guard !urls.isEmpty, let directory, directory.isFileURL else { return hideDropHighlight() }
         let operation = FileDrop.operation(urls, into: directory, info: info, copies: copies)
         dropHighlight.isHidden = operation.isEmpty
         return operation
@@ -174,6 +176,7 @@ extension FileItemCollection {
 
     func acceptDrop(_ info: NSDraggingInfo, indexPath: IndexPath, dropOperation: NSCollectionView.DropOperation) -> Bool {
         endDrop()
+        guard directory?.isFileURL != false else { return false }
         let urls = FileDrop.urls(info, copies: copies)
         let index = indexPath.count == 2 ? indexPath.item : -1
         let folder: URL? = dropOperation == .on && entries.indices.contains(index) && entries[index].isFolder

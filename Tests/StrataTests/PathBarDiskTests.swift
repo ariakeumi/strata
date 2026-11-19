@@ -7,8 +7,8 @@ import Testing
 @MainActor struct PathBarDiskTests {
     private func pathBar(_ environment: IndependentEnvironment, at url: URL) -> PathBar {
         let services = environment.services
-        let bar = PathBar(preferences: services.preferences, places: services.places, index: services.index,
-                          copies: services.copies, names: services.folderNames, clipboard: services.clipboard)
+        let bar = PathBar(preferences: services.preferences, places: services.places,
+                          copies: services.copies, names: services.folderNames)
         bar.url = url
         bar.beginEditing()
         return bar

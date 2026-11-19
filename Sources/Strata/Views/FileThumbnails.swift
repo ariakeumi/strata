@@ -1,8 +1,6 @@
 import StrataModel
-import StrataArchives
 import StrataSupport
 import AppKit
-import ImageIO
 import QuickLookThumbnailing
 import UniformTypeIdentifiers
 import os
@@ -32,9 +30,7 @@ import os
         var entry: FileEntry
         var request: QLThumbnailGenerator.Request
         var generation: Int
-        var coverSource: FileReadSource?
         let stopped: OSAllocatedUnfairLock<Bool>
-        var preparing: Task<Void, Never>?
         var started = false
         var callbacks: [Int: Observer]
     }
@@ -44,7 +40,6 @@ import os
         let finished: (() -> Void)?
     }
 
-    private let covers: BookCoverThumbnails
     private let reads = ReadQueue(limit: 4)
     private let cache: ThumbnailCache
     let copies: CopyProviders
@@ -53,18 +48,18 @@ import os
     private let cancelGeneration: (QLThumbnailGenerator.Request) -> Void
     private var pending: [String: Pending] = [:]
     /// Keys Quick Look had nothing for, so they aren't asked for again.
-    private var failed: Set<String> = []
-    private var keysByPath: [String: Set<String>] = [:]
+    private var failuresByPath: [String: Set<String>] = [:]
+    private var failureCount = 0
+    private(set) var pendingKeysByPath: [String: Set<String>] = [:]
     private var nextID = 0
 
-    init(cache: ThumbnailCache = ThumbnailCache(), coverReader: @escaping BookCoverThumbnails.Reader = { try await BookFormat.cover($0, pixels: $1) }, copies: CopyProviders, containerStore: ContainerStore, generate: @escaping Generate = { request, completion in
+    init(cache: ThumbnailCache = ThumbnailCache(), copies: CopyProviders, containerStore: ContainerStore, generate: @escaping Generate = { request, completion in
         QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { representation, error in
             let cancelled = (error as? CocoaError)?.code == .userCancelled || (error as NSError?)?.code == NSUserCancelledError
             let image = representation?.cgImage
             DispatchQueue.global(qos: .utility).async { completion(image, cancelled) }
         }
     }, cancel: @escaping (QLThumbnailGenerator.Request) -> Void = { QLThumbnailGenerator.shared.cancel($0) }) {
-        covers = BookCoverThumbnails(reader: coverReader)
         self.cache = cache
         self.copies = copies
         self.containerStore = containerStore
@@ -78,7 +73,8 @@ import os
     }
 
     func icon(for entry: FileEntry) -> NSImage {
-        IconCache.shared.icon(for: entry, containerCopies: copies.containerCopies, containerStore: containerStore)
+        if !entry.url.isFileURL { return IconCache.shared.icon(forType: .folder) }
+        return IconCache.shared.icon(for: entry, containerCopies: copies.containerCopies, containerStore: containerStore)
     }
 
     func canThumbnail(_ entry: FileEntry) -> Bool {
@@ -95,7 +91,9 @@ import os
     static func canThumbnail(_ entry: FileEntry, copies: CopyProviders) -> Bool {
         // A container's file not fetched yet has nothing to show.
         guard !entry.isFolder, !entry.isSymlink, !copies.isPlaceholder(entry.url) else { return false }
-        if BookFormat.hasCover(entry.url) { return !entry.isPackage }
+        // EPUB and comic archives can have a Quick Look thumbnail provider.
+        let ext = entry.url.pathExtension.lowercased()
+        if ext == "epub" || BookFormat.comics.contains(ext) { return !entry.isPackage }
         guard let type = entry.contentType else { return !entry.isPackage }
         return !(type.conforms(to: .bundle) || type.conforms(to: .application) || type.conforms(to: .archive)
             || type.conforms(to: .diskImage) || type.conforms(to: .unixExecutable) || type.conforms(to: .aliasFile)
@@ -114,15 +112,20 @@ import os
     }
 
     private func invalidate(_ entry: FileEntry) {
-        guard let keys = keysByPath.removeValue(forKey: entry.url.path) else { return }
-        for key in keys {
-            cache.remove(forKey: key)
-            failed.remove(key)
-            if let item = pending.removeValue(forKey: key) {
-                stop(item)
-                for observer in item.callbacks.values { observer.finished?() }
-            }
+        let path = entry.url.path
+        cache.removeImages(forPath: path)
+        failureCount -= failuresByPath.removeValue(forKey: path)?.count ?? 0
+        guard let keys = pendingKeysByPath.removeValue(forKey: path) else { return }
+        let items = keys.compactMap { pending.removeValue(forKey: $0) }
+        for item in items { stop(item) }
+        for item in items {
+            for observer in item.callbacks.values { observer.finished?() }
         }
+    }
+
+    private func forgetRequest(_ key: String, path: String) {
+        pendingKeysByPath[path]?.remove(key)
+        if pendingKeysByPath[path]?.isEmpty == true { pendingKeysByPath[path] = nil }
     }
 
     /// The best thumbnail already in memory for `size`: an exact or larger bucket, else a smaller one.
@@ -142,7 +145,7 @@ import os
     /// Whether Quick Look already said it has no thumbnail for this file.
     func hasFailed(_ entry: FileEntry, size: CGFloat, scale: CGFloat) -> Bool {
         guard canThumbnail(entry) else { return false }
-        return failed.contains(key(entry, Self.bucket(for: size), scale))
+        return failuresByPath[entry.url.path]?.contains(key(entry, Self.bucket(for: size), scale)) == true
     }
 
     /// Generates a thumbnail; `completion` runs on the main actor, only on success and only if not cancelled.
@@ -154,7 +157,7 @@ import os
         guard canThumbnail(entry) else { finished?(); return nil }
         let bucket = Self.bucket(for: size)
         let key = key(entry, bucket, scale)
-        if failed.contains(key) { finished?(); return nil }
+        if failuresByPath[entry.url.path]?.contains(key) == true { finished?(); return nil }
         if let image = cache.image(forKey: key) {
             completion(image)
             finished?()
@@ -170,10 +173,7 @@ import os
                                                    scale: scale, representationTypes: .thumbnail)
         request.iconMode = true
         let generation = ticket.id
-        if keysByPath.count >= 50_000, keysByPath[entry.url.path] == nil {
-            keysByPath.removeAll(keepingCapacity: true)
-        }
-        keysByPath[entry.url.path, default: []].insert(key)
+        pendingKeysByPath[entry.url.path, default: []].insert(key)
         pending[key] = Pending(entry: entry, request: request, generation: generation,
                                stopped: OSAllocatedUnfairLock(initialState: false),
                                callbacks: [ticket.id: Observer(image: completion, finished: finished)])
@@ -183,28 +183,9 @@ import os
 
     private func start(_ key: String, generation: Int) {
         guard let item = pending[key], item.generation == generation else { reads.finish(generation); return }
-        guard BookFormat.hasCover(item.entry.url) else { generate(key, generation: generation); return }
-        // Pin the book before Quick Look can fail and request its cover, without opening a file on the UI thread.
-        let url = item.entry.url, reads = reads
-        pending[key]?.preparing = Task { [weak self] in
-            let source = await OwnThread.run { try? FileReadSource(url) }
-            guard !Task.isCancelled, let self, self.pending[key]?.generation == generation else {
-                reads.finish(generation)
-                return
-            }
-            self.pending[key]?.preparing = nil
-            self.pending[key]?.coverSource = source
-            self.generate(key, generation: generation)
-        }
-    }
-
-    private func generate(_ key: String, generation: Int) {
-        guard let item = pending[key], item.generation == generation else { reads.finish(generation); return }
         guard canThumbnail(item.entry) else { return }
         pending[key]?.started = true
         let stopped = item.stopped
-        let entry = item.entry
-        let pixels = Int(min(2048, item.request.size.width * max(item.request.scale, 1)))
         generate(item.request) { [weak self] original, cancelled in
             guard !stopped.withLock({ $0 }) else { return }
             let original = original.flatMap { Self.bounded($0) ? $0 : nil }
@@ -214,16 +195,7 @@ import os
             // A cropped CGImage can retain the original backing, so charge its full decoded size.
             let cost = original.map { $0.bytesPerRow * $0.height } ?? 0
             DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let self, self.pending[key]?.generation == generation else { return }
-                    if image == nil, !cancelled, let source = self.pending[key]?.coverSource, self.canThumbnail(entry) {
-                        self.covers.request(id: generation, source: source, pixels: pixels) { [weak self] cover in
-                            self?.finish(key, generation: generation, cover, cancelled: false, cost: cover.map { $0.bytesPerRow * $0.height } ?? 0)
-                        }
-                    } else {
-                        self.finish(key, generation: generation, image, cancelled: cancelled, cost: cost)
-                    }
-                }
+                self?.finish(key, generation: generation, image, cancelled: cancelled, cost: cost)
             }
         }
     }
@@ -231,11 +203,8 @@ import os
     private func stop(_ item: Pending) {
         item.stopped.withLock { $0 = true }
         reads.cancel(item.generation)
-        item.preparing?.cancel()
-        covers.cancel(item.generation)
         if item.started { cancelGeneration(item.request) }
-        // An uninterruptible file open still owns its slot until it actually returns.
-        if item.preparing == nil { reads.finish(item.generation) }
+        reads.finish(item.generation)
     }
 
     nonisolated private static func bounded(_ image: CGImage) -> Bool {
@@ -249,6 +218,7 @@ import os
         entry.callbacks[ticket.id] = nil
         if entry.callbacks.isEmpty {
             pending[ticket.key] = nil
+            forgetRequest(ticket.key, path: entry.entry.url.path)
             stop(entry)
         } else {
             pending[ticket.key] = entry
@@ -305,6 +275,7 @@ import os
         // A cancelled request can still complete after a new one for the same key started; ignore it.
         guard let entry = pending[key], entry.generation == generation else { return }
         pending[key] = nil
+        forgetRequest(key, path: entry.entry.url.path)
         defer {
             for observer in entry.callbacks.values { observer.finished?() }
             reads.finish(generation)
@@ -313,8 +284,11 @@ import os
         guard let cgImage else {
             if !cancelled {
                 // Every file is asked now, so most folders have some files without a thumbnail; keep this bounded.
-                if failed.count >= 50_000 { failed.removeAll(keepingCapacity: true) }
-                failed.insert(key)
+                if failureCount >= 50_000 {
+                    failuresByPath.removeAll()
+                    failureCount = 0
+                }
+                if failuresByPath[entry.entry.url.path, default: []].insert(key).inserted { failureCount += 1 }
             }
             return
         }
@@ -323,7 +297,7 @@ import os
         let factor = 1 / scale
         let image = NSImage(cgImage: cgImage, size: NSSize(width: CGFloat(cgImage.width) * factor,
                                                            height: CGFloat(cgImage.height) * factor))
-        cache.insert(image, forKey: key, cost: cost)
+        cache.insert(image, forKey: key, cost: cost, path: entry.entry.url.path)
         for observer in entry.callbacks.values { observer.image(image) }
     }
 }
@@ -364,6 +338,7 @@ import os
 
     /// The text to show right away: a file's size, or a cached count/dimension. Nil means "ask `request`".
     func immediate(_ entry: FileEntry, showHidden: Bool) -> String? {
+        guard entry.url.isFileURL else { return entry.kind }
         // A container says whether it runs (its folder only holds what's been browsed, so no count).
         if entry.isDirectory, let (source, top) = copies.containerCopies.copy(containing: entry.url),
            top.lexicallyStandardized == entry.url.lexicallyStandardized {
@@ -389,6 +364,7 @@ import os
     }
 
     nonisolated static func canLoad(_ entry: FileEntry, copies: CopyProviders) -> Bool {
+        guard entry.url.isFileURL else { return false }
         if entry.isFolder { return !entry.isSymlink && !entry.isVolume && !copies.contains(entry.url) }
         // A container's image not fetched yet: its size for now, its dimensions once it's here (not cached meanwhile).
         if copies.isPlaceholder(entry.url) { return false }

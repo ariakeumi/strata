@@ -13,17 +13,20 @@ final class FileDrag: NSObject, NSDraggingInfo, DragKeys {
     let optionHeld: Bool
     let draggingSequenceNumber: Int
     var draggingDestinationWindow: NSWindow? { nil }
-    var draggingLocation: NSPoint { .zero }
+    let draggingLocation: NSPoint
     var draggedImageLocation: NSPoint { .zero }
     nonisolated var draggedImage: NSImage? { nil }
-    var draggingSource: Any? { nil }
+    let draggingSource: Any?
     var draggingFormation: NSDraggingFormation = .none
     var animatesToDestination = false
     var numberOfValidItemsForDrop = 1
     var springLoadingHighlight: NSSpringLoadingHighlight { .none }
 
-    init(_ urls: [URL], offering mask: NSDragOperation = .copy, option: Bool = false) {
+    init(_ urls: [URL], offering mask: NSDragOperation = .copy, option: Bool = false, source: Any? = nil,
+         location: NSPoint = .zero) {
         draggingSourceOperationMask = mask
+        draggingSource = source
+        draggingLocation = location
         optionHeld = option
         draggingSequenceNumber = Self.drags.withLock { count in
             count += 1

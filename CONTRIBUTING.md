@@ -1,6 +1,6 @@
 # Contributing to Strata
 
-Thanks for helping make Strata better. Bug reports, ideas, translations, themes and code are all welcome.
+Thanks for helping make Strata better. Bug reports, ideas, translations and code are all welcome.
 
 Found a security problem? Please don't open an issue: [SECURITY.md](SECURITY.md) explains how to report it privately.
 
@@ -16,11 +16,6 @@ whether Dual Pane was on, and what was selected: some bugs only happen in one of
   has the steps, and no Xcode is needed.
 - **The README:** see the [README translation guide](docs/readme-localization.md).
 - **The website:** see [Website localization](docs/website.md#website-localization).
-
-## Add a color theme
-
-A theme is one JSON file. [docs/themes.md](docs/themes.md) describes the format, including published schemes such as
-Catppuccin, and the checks to run.
 
 ## Change the code
 

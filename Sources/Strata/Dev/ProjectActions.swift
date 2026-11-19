@@ -7,28 +7,17 @@ extension ProjectInfo {
     private static var sizeCache: [String: (bytes: Int64, files: Int, date: Date)] = [:]
     private static let sizeCacheLifetime: TimeInterval = 60
 
-    /// Everything the project inspector needs for `folder`, or nil when it's neither a project nor a repository root.
-    ///
-    /// Detection runs off the main thread; git status comes from `store` (usually already cached by the browser);
-    /// artifacts git tracks are dropped (a committed `bin/` is not a build artifact). `onUpdate` receives the result
-    /// before sizes are known, so the inspector can show it immediately; the return value has sizes. Cancel the
+    /// Loads the inspector data for a project folder. `onUpdate` receives it before artifact sizes are known,
+    /// so the inspector can show it immediately. The return value has sizes. Cancel the
     /// calling task when the selection changes: the size walks stop and nil is returned.
     /// On the main actor, said so: `ProjectInfo` itself is nonisolated, and compilers have read this extension's
     /// isolation differently.
     @MainActor
-    package static func load(for folder: URL, store: GitStatusStore,
+    package static func load(for folder: URL,
                              onUpdate: (@MainActor (ProjectInfo) -> Void)? = nil) async -> ProjectInfo? {
         let folder = folder.lexicallyStandardized
         var info = await ProjectDetector.detect(folder)
-        let repository = await store.repositoryFound(containing: folder)
-        let isRoot = repository?.rootPath == folder.path
-        guard info.isProject || isRoot, !Task.isCancelled else { return nil }
-
-        if let repository, let snapshot = await store.status(of: repository) {
-            info.git = ProjectGitSummary(snapshot, folder: folder)
-            info.artifacts = await untrackedArtifacts(info.artifacts, snapshot: snapshot, timeout: store.timeout)
-        }
-        guard !Task.isCancelled else { return nil }
+        guard info.isProject, !Task.isCancelled else { return nil }
 
         // Sizes already known: measured here recently, or by the list's size column.
         let now = Date()
@@ -54,108 +43,11 @@ extension ProjectInfo {
         }
         return info
     }
-
-    /// The same info with the git summary taken from the store's current snapshot. No I/O: use it when
-    /// `.gitStatusDidChange` fires instead of reloading (which could re-measure artifacts).
-    package func withCurrentGit(store: GitStatusStore) -> ProjectInfo {
-        guard let repository = store.repository(containing: folder), let snapshot = store.snapshot(for: repository.root) else {
-            return self
-        }
-        var copy = self
-        copy.git = ProjectGitSummary(snapshot, folder: folder)
-        return copy
-    }
-
-    /// Forgets measured sizes under `folder` (after cleaning, or a reload).
-    package static func invalidateSizes(under folder: URL) {
-        let prefix = folder.lexicallyStandardized.path + "/"
-        sizeCache = sizeCache.filter { !$0.key.hasPrefix(prefix) }
-    }
-
-    /// Keeps only folders git doesn't track. Ignored or untracked per the snapshot is enough; anything else is checked
-    /// with one `git ls-files`, and dropped if that check fails (never offer to delete what we couldn't verify).
-    private static func untrackedArtifacts(_ artifacts: [ProjectArtifact], snapshot: GitStatusSnapshot,
-                                           timeout: TimeInterval) async -> [ProjectArtifact] {
-        var unknown: [String] = []
-        for artifact in artifacts {
-            for url in artifact.urls {
-                guard let path = snapshot.relativePath(url), !path.isEmpty else { continue }
-                if !snapshot.isUntrackedOrIgnored(relativePath: path) { unknown.append(path) }
-            }
-        }
-        let tracked: Set<String>
-        if unknown.isEmpty {
-            tracked = []
-        } else {
-            tracked = await GitStatusLoader.trackedPaths(unknown, in: snapshot.repository, timeout: timeout) ?? Set(unknown)
-        }
-        return artifacts.compactMap { artifact in
-            let urls = artifact.urls.filter { url in
-                guard let path = snapshot.relativePath(url) else { return true }
-                return !tracked.contains(path)
-            }
-            guard !urls.isEmpty else { return nil }
-            return ProjectArtifact(name: artifact.name, urls: urls, kind: artifact.kind, role: artifact.role,
-                                   bytes: urls.count == artifact.urls.count ? artifact.bytes : nil, files: nil)
-        }
-    }
 }
 
 // MARK: - Actions
 
 package enum ProjectActions {
-    /// Asks before moving `artifacts` to the Trash (sheet on `window`), then trashes them with undo. Calls
-    /// `completion` with the trashed folders (empty when cancelled or failed).
-    package static func confirmClean(_ artifacts: [ProjectArtifact], window: NSWindow,
-                             files: FileCommands,
-                             completion: @escaping ([URL]) -> Void) {
-        guard !artifacts.isEmpty else { return completion([]) }
-        let total = artifacts.compactMap(\.bytes).saturatingSum
-        let alert = NSAlert()
-        let count = artifacts.reduce(0) { $0 + $1.urls.count }
-        alert.messageText = count == 1
-            ? String(localized: "Move “\(artifacts[0].name)” to the Trash?")
-            : String(localized: "Move \(count) build folders to the Trash?", comment: "plural")
-        let lines = artifacts.map { artifact -> String in
-            let size = artifact.bytes.map { " — " + Format.bytes($0) } ?? ""
-            let multiple = artifact.urls.count > 1
-                ? " (" + String(localized: "\(artifact.urls.count) folders", comment: "plural") + ")" : ""
-            return "• \(artifact.name)\(multiple)\(size)"
-        }
-        let hasEnvironment = artifacts.contains { $0.role == .environment }
-        // Sizes still being measured make any total an understatement.
-        let measured = artifacts.allSatisfy { $0.bytes != nil }
-        var sentences: [String] = []
-        if measured {
-            sentences.append(String(localized: "Frees \(Format.bytes(total)).", comment: "Placeholder: a size, e.g. 1.2 GB"))
-        } else if total > 0 {
-            sentences.append(String(localized: "Frees at least \(Format.bytes(total)).", comment: "Placeholder: a size, e.g. 1.2 GB"))
-        }
-        sentences.append(hasEnvironment
-            ? String(localized: "They’re rebuilt by the next install or build; virtual environments need to be recreated.")
-            : String(localized: "They’re rebuilt by the next install or build."))
-        sentences.append(String(localized: "You can undo this with ⌘Z."))
-        alert.informativeText = lines.joined(separator: "\n") + "\n\n" + sentences.joined(separator: " ")
-        alert.alertStyle = .warning
-        let trash = alert.addButton(withTitle: String(localized: "Move to Trash"))
-        trash.hasDestructiveAction = true
-        alert.addButton(withTitle: String(localized: "Cancel"))
-        alert.beginSheetModal(for: window) { [weak window] response in
-            guard response == .alertFirstButtonReturn, let window else { return completion([]) }
-            let undo = window.undoManager
-            Task { [weak window] in
-                do {
-                    let urls = artifacts.flatMap(\.urls)
-                    try await files.trash(urls, undo: undo)
-                    completion(urls)
-                } catch {
-                    if let window { NSAlert(error: error).beginSheetModal(for: window, completionHandler: nil) }
-                    completion([])
-                }
-            }
-        }
-    }
-
     /// Opens a terminal in the script's folder and runs it, leaving an interactive shell open afterwards.
     ///
     /// Writes a self-deleting `.command` file and opens it with the chosen terminal, or the first automatic choice

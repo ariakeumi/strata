@@ -76,7 +76,7 @@ final class InspectorViewController: NSViewController {
                                                     store: services.containerStore)
         self.composeView = ComposeInspectorView(preferences: services.preferences,
                                                 store: services.containerStore)
-        self.projectView = ProjectInspectorView(files: services.files, git: services.git, clipboard: services.clipboard)
+        self.projectView = ProjectInspectorView(preferences: services.preferences, clipboard: services.clipboard)
         self.previewScheduler = previewScheduler
         self.makePreview = makePreview ?? { entry, fallback in
             RichPreview.makeView(for: entry.url, contentType: entry.contentType, preferences: services.preferences,
@@ -149,7 +149,6 @@ final class InspectorViewController: NSViewController {
     /// The sections below the titles, in order.
     private func makeCards() -> [NSView] {
         projectView.isHidden = true
-        projectView.onDidClean = { [weak self] _ in self?.reloadProject() }
         // Every section is a card of the same kind, in Finder's Get Info order.
         let preferences = services.preferences
         infoCard = InspectorCard(id: "info", title: String(localized: "Information", comment: "Inspector section: size, dates, location"),
@@ -615,17 +614,15 @@ final class InspectorViewController: NSViewController {
 
     // MARK: - Project section
 
-    /// Loads the project section for `url` (nil hides it). The same folder isn't reloaded unless `force`; a forced
-    /// reload keeps the current section on screen until the new data arrives.
-    private func loadProject(_ url: URL?, force: Bool = false) {
-        let same = url?.lexicallyStandardized.path == projectFolder?.lexicallyStandardized.path
-        guard !same || force else { return }
+    /// Loads the project section when the shown folder changes.
+    private func loadProject(_ url: URL?) {
+        guard url?.lexicallyStandardized.path != projectFolder?.lexicallyStandardized.path else { return }
         projectFolder = url
         projectTask?.cancel()
-        if !same { showProject(nil) }
+        showProject(nil)
         guard let url else { return }
-        projectTask = Task { [weak self, git = services.git] in
-            let info = await ProjectInfo.load(for: url, store: git) { partial in
+        projectTask = Task { [weak self] in
+            let info = await ProjectInfo.load(for: url) { partial in
                 guard !Task.isCancelled, let self, self.projectFolder == url else { return }
                 self.showProject(partial)
             }
@@ -637,18 +634,6 @@ final class InspectorViewController: NSViewController {
     private func showProject(_ info: ProjectInfo?) {
         projectView.configure(info)
         projectView.isHidden = info == nil
-    }
-
-    private func reloadProject() {
-        loadProject(projectFolder, force: true)
-    }
-
-    /// A repository's status changed: refresh the git part only (no rescans).
-    func gitStatusChanged(_ notification: Notification) {
-        guard let info = projectView.info, let root = notification.userInfo?["root"] as? URL else { return }
-        let path = info.folder.lexicallyStandardized.path
-        guard path == root.path || path.hasPrefix(root.path + "/") else { return }
-        projectView.configure(info.withCurrentGit(store: services.git))
     }
 
     private func setRows(_ rows: [(String, NSView)]) {

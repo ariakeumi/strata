@@ -6,13 +6,17 @@ and changing the view mode in the toolbar or View menu updates the default view 
 across uncustomized folders. Settings live in Strata’s preferences; Strata does not create `.DS_Store` files in the
 folders you browse.
 
+Control-Command-1 through Control-Command-5 switch between Icons, List, Columns, Gallery and Disk Usage. Command-1
+through Command-9 open the first nine visible folder rows in sidebar order, in the active pane. Section headers and
+rows for searches, tags and other non-folder items do not count.
+
 Command-J opens View Options for the originating pane. Its Folder section chooses the view and order; Icon size
 belongs to that folder too. **Use as Defaults** makes its current choices the defaults for folders without a saved
 choice. **Reset** removes only that folder’s saved choice and restores the current defaults. Other options, including
 column visibility, alternating rows, item information and icon previews, remain shared appearance settings.
 
 Other panes using the same preferences update when their folder’s choice changes. Independent environments keep
-their own settings. Search, Recents and Duplicates retain their own presentation and cannot overwrite folder choices;
+their own settings. Search and Recents retain their own presentation and cannot overwrite folder choices;
 the Folder controls are disabled there. Provider copies and archive cache folders are temporary, so their paths do
 not become remembered local folder settings.
 

@@ -12,6 +12,16 @@ import Testing
 /// The folders and disks Strata offers are read away from the main thread: lists show what was last read, and a read
 /// under way takes the next request after it, never two at once.
 @MainActor struct PlaceChecksTests {
+    @Test func sidebarLocationsHideOnlySMBVolumes() {
+        let disk = Place(title: "External disk", url: URL(filePath: "/Volumes/External"), symbol: "externaldrive")
+        let smb = Place(title: "SMB share", url: URL(filePath: "/Volumes/Shared"), symbol: "network", isSMB: true)
+        let nfs = Place(title: "NFS share", url: URL(filePath: "/Volumes/Other"), symbol: "network")
+        let snapshot = PlaceChecks.Snapshot(volumes: [disk, smb, nfs])
+
+        #expect(snapshot.sidebarLocationVolumes == [disk, nfs])
+        #expect(snapshot.volumes == [disk, smb, nfs])
+    }
+
     @Test func placesAreReadInTheBackgroundAndListedAsLastRead() async throws {
         let tree = try TestTree("kept/", "gone/", "file")
         let preferences = try Prefs.isolated()

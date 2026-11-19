@@ -130,44 +130,4 @@ import Testing
         #expect(browser.selectedURLs.map(\.lastPathComponent) == ["c.txt"])
         #expect(tree.snapshot() == ["home/", "home/a.txt", "home/b.txt", "home/c.txt", "home/d.txt"])
     }
-
-    @Test func inASpacePreviewTheRestOfACellIsEmptySpaceForItsMenuAndADoubleClick() throws {
-        let tree = try TestTree("a.txt", "b.txt")
-        let services = testEnvironment.services
-        let grid = PreviewGridController(preferences: services.preferences, thumbnails: services.thumbnails)
-        grid.view.frame = NSRect(x: 0, y: 0, width: 500, height: 400)
-        defer { grid.close() }
-        let items = try ["a.txt", "b.txt"].map { PreviewItem(.file(try #require(FileEntry(url: tree.url($0))))) }
-        grid.apply(items, selected: items[0])
-        (grid.view as? NSScrollView)?.tile()
-        grid.collection.layoutSubtreeIfNeeded()
-        func cell(_ index: Int) throws -> GridItemView {
-            try #require(grid.collection.item(at: IndexPath(item: index, section: 0)) as? PreviewGridItem).itemView
-        }
-        let first = try cell(0), second = try cell(1)
-        let onSecondIcon = grid.collection.convert(NSPoint(x: second.iconBoxRect.midX, y: second.iconBoxRect.midY), from: second)
-        let besideFirstIcon = grid.collection.convert(NSPoint(x: 1, y: 1), from: first)
-        var opened: [String] = [], told: [String?] = [], menusBuiltAfterTelling: [Int] = []
-        grid.onActivate = { opened.append($0.name) }
-        grid.onSelection = { told.append($0?.name) }
-        grid.onContextMenu = {
-            menusBuiltAfterTelling.append(told.count)
-            return nil
-        }
-
-        // Beside an icon a double click opens nothing, and a right click leaves nothing selected for its menu. The
-        // menu is built once the preview was told so: its commands act on what is shown selected.
-        try #require(grid.collection.selectionIndexPaths == [IndexPath(item: 0, section: 0)])
-        grid.collection.activate(at: besideFirstIcon)
-        #expect(opened.isEmpty)
-        _ = grid.collection.menu(at: besideFirstIcon)
-        #expect(grid.collection.selectionIndexPaths.isEmpty && told == [nil] && menusBuiltAfterTelling == [1])
-        // On an icon they mean that item.
-        _ = grid.collection.menu(at: onSecondIcon)
-        #expect(grid.collection.selectionIndexPaths == [IndexPath(item: 1, section: 0)])
-        #expect(told == [nil, "b.txt"] && menusBuiltAfterTelling == [1, 2])
-        grid.collection.activate(at: onSecondIcon)
-        #expect(opened == ["b.txt"])
-        #expect(tree.snapshot() == ["a.txt", "b.txt"])
-    }
 }

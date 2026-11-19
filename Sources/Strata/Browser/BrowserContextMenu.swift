@@ -18,9 +18,7 @@ struct BrowserContextMenu {
         var renameTitle: String
         var compressTitle: String
         var extractTitle: String
-        var appUpdatesTitle: String
         var hasArchives: Bool
-        var hasApps: Bool
         var containers: [ContainerInfo]
         var canDownload: Bool
         var canRemoveDownload: Bool
@@ -179,7 +177,6 @@ struct BrowserContextMenu {
                 await OpenWithApp.all(opening: file, limit: 24)
             }.item)
         }
-        if facts.hasApps { add(.checkAppsForUpdates, title: facts.appUpdatesTitle, to: menu) }
         // iCloud Drive and File Provider folders: bring items here, or free their space.
         if !inTrash, facts.canDownload { addTitled(String(localized: "Download Now"), #selector(BrowserViewController.downloadNow(_:)), "icloud.and.arrow.down", to: menu) }
         if !inTrash, facts.canRemoveDownload { addTitled(String(localized: "Remove Download"), #selector(BrowserViewController.removeDownload(_:)), "icloud.slash", to: menu) }

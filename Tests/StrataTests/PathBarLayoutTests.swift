@@ -38,33 +38,10 @@ import Testing
         #expect(!window.isVisible)
     }
 
-    @Test(arguments: [false, true], [false, true])
-    func lateGitDetailsPreserveReadableFoldersAndCompleteParents(_ embedded: Bool, repositoryIsCurrent: Bool) throws {
-        let environment = try IndependentEnvironment()
-        let bar = makeBar(environment, embedded: embedded)
-        let folder = URL(filePath: "/Users/example/Documents/GitHub/project/build/chat-design-previews", directoryHint: .isDirectory)
-        bar.url = folder
-        let window = try host(bar)
-        defer { window.contentView = nil }
-        try checkFitting(bar, in: window, folder: folder)
-        bar.gitRoot = repositoryIsCurrent ? folder : folder.deletingLastPathComponent().deletingLastPathComponent()
-        for branch in ["main", String(repeating: "feature/long-branch-name", count: 4), "main"] {
-            bar.branchPill.model = .init(branch: branch)
-            for width in [200.0, 240.0, 320.0, 520.0, 720.0, 200.0] {
-                window.setContentSize(NSSize(width: width + 32, height: 64))
-                try checkFitting(bar, in: window, folder: folder)
-            }
-        }
-        bar.branchPill.model = nil
-        try checkFitting(bar, in: window, folder: folder)
-        #expect(bar.branchPill.isHidden)
-        #expect(!window.isVisible)
-    }
-
     private func makeBar(_ environment: IndependentEnvironment, embedded: Bool) -> PathBar {
         let services = environment.services
-        return PathBar(preferences: services.preferences, places: services.places, index: services.index,
-                       copies: services.copies, names: services.folderNames, clipboard: services.clipboard, embedded: embedded)
+        return PathBar(preferences: services.preferences, places: services.places,
+                       copies: services.copies, names: services.folderNames, embedded: embedded)
     }
 
     private func host(_ bar: PathBar) throws -> NSWindow {
@@ -99,10 +76,6 @@ import Testing
         for arrow in arrows {
             let frame = arrow.convert(arrow.bounds, to: bar)
             #expect(frame.minX >= 6 && frame.maxX <= bar.bounds.maxX - 6)
-        }
-        if !bar.branchPill.isHidden {
-            let branch = bar.branchPill.convert(bar.branchPill.bounds, to: bar)
-            #expect(branch.minX >= 6 && branch.maxX <= bar.bounds.maxX - 6)
         }
         let paragraph = current.attributedTitle.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
         #expect(paragraph?.lineBreakMode == .byTruncatingTail)

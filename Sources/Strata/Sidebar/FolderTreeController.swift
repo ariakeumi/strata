@@ -4,7 +4,9 @@ import AppKit
 /// ahead at once its parent opens, so the disclosure triangle is right before you click it.
 final class FolderNode {
     /// The Trash, Containers and servers sit at the top level next to the disks: places, not folders to expand.
-    enum Kind { case folder, trash, containers, server }
+    enum Kind: Equatable { case folder, trash, containers, server, smb(UUID) }
+
+    var acceptsFileDrop: Bool { kind == .folder || kind == .trash }
 
     let url: URL
     let title: String
@@ -43,6 +45,7 @@ final class FolderTreeController: NSViewController {
     let preferences: Prefs
     private let transfers: TransferQueue
     private let remote: RemoteServices
+    private let smb: SMBConnections
     private let copies: CopyProviders
     private let containerStore: ContainerStore
     private let places: PlaceChecks
@@ -51,17 +54,16 @@ final class FolderTreeController: NSViewController {
         didSet { if cloudFolders != oldValue { volumesChanged() } }
     }
 
-    init(places: PlaceChecks, transfers: TransferQueue, preferences: Prefs, remote: RemoteServices,
-         copies: CopyProviders, containerStore: ContainerStore,
-         clipboard: Clipboard, watchBudget: FolderWatchers.Budget) {
+    init(services: BrowserServices, watchBudget: FolderWatchers.Budget) {
         watchers = FolderWatchers(budget: watchBudget)
-        self.places = places
-        self.remote = remote
-        self.copies = copies
-        self.containerStore = containerStore
-        self.clipboard = clipboard
-        self.transfers = transfers
-        self.preferences = preferences
+        places = services.places
+        remote = services.remote
+        smb = services.smb
+        copies = services.copies
+        containerStore = services.containerStore
+        clipboard = services.clipboard
+        transfers = services.transfers
+        preferences = services.preferences
         showedHidden = preferences.showHidden
         super.init(nibName: nil, bundle: nil)
     }
@@ -71,6 +73,7 @@ final class FolderTreeController: NSViewController {
 
     var onSelect: ((SidebarTarget) -> Void)?
     var onOpenInNewTab: ((URL) -> Void)?
+    var onManageSMB: (() -> Void)?
     /// Items dropped on the Trash row.
     var onTrash: (([URL]) -> Void)?
     /// Whether these items may go to the Trash (the sidebar's own check).
@@ -86,6 +89,7 @@ final class FolderTreeController: NSViewController {
     private var suppressSelection = false
     /// The folder shown in the window: revealed once the tree is on screen.
     private var current: URL?
+    private var currentSMB: UUID?
     /// Shown in the sidebar: it follows the window's folder and watches folders only then (a fresh tree when shown).
     var isActive = false {
         didSet {
@@ -115,6 +119,13 @@ final class FolderTreeController: NSViewController {
 
     /// For moving focus when the sidebar switches modes.
     var focusView: NSView { outline }
+
+    func folder(at position: Int) -> URL? {
+        outline.folder(at: position) { item in
+            guard let node = item as? FolderNode, node.kind == .folder || node.kind == .trash else { return nil }
+            return node.url
+        }
+    }
 
     override func loadView() {
         let scroll = NSScrollView()
@@ -154,6 +165,7 @@ final class FolderTreeController: NSViewController {
         // Disks are listed as last read: a mount is read in the background, and shows when that read ends.
         NotificationCenter.default.addObserver(self, selector: #selector(volumesChanged), name: .placesChecked, object: places)
         remote.notifications.addObserver(self, selector: #selector(volumesChanged), name: .remoteServersChanged, object: remote.servers)
+        smb.notifications.addObserver(self, selector: #selector(volumesChanged), name: .smbConnectionsChanged, object: smb)
         for name in [Notification.Name.trashChanged, .operationLogChanged, NSApplication.didBecomeActiveNotification] {
             NotificationCenter.default.addObserver(self, selector: #selector(trashMayHaveChanged), name: name, object: nil)
         }
@@ -189,6 +201,11 @@ final class FolderTreeController: NSViewController {
             fresh.append(node.title == server.name && node.symbol == symbol ? node
                 : FolderNode(url: top, title: server.name, symbol: symbol, kind: .server))
         }
+        for profile in smb.profiles {
+            let kind = FolderNode.Kind.smb(profile.id)
+            let node = roots.first { $0.kind == kind && $0.title == profile.title && $0.url == profile.address }
+            fresh.append(node ?? FolderNode(url: profile.address, title: profile.title, symbol: "network", kind: kind))
+        }
         if hasContainers ?? (containerStore.engine != nil) {
             let root = copies.containerCopies.root
             fresh.append(reuse(root, .containers) {
@@ -210,7 +227,7 @@ final class FolderTreeController: NSViewController {
         roots = currentRoots()
         outline.reloadData()
         if let home = roots.first { expand(home) }
-        if let current { reveal(current) }
+        revealCurrent()
     }
 
     /// A disk mounted or ejected, an engine started or stopped: those rows come and go, the rest stays as it is.
@@ -226,7 +243,7 @@ final class FolderTreeController: NSViewController {
         guard orderPreserved else {
             roots = fresh
             outline.reloadData()
-            if let current { reveal(current) }
+            revealCurrent()
             return
         }
         outline.beginUpdates()
@@ -238,7 +255,7 @@ final class FolderTreeController: NSViewController {
         roots = fresh
         if !inserted.isEmpty { outline.insertItems(at: inserted, inParent: nil, withAnimation: []) }
         outline.endUpdates()
-        if let current { reveal(current) }
+        revealCurrent()
     }
 
     private var showedHidden: Bool
@@ -438,6 +455,7 @@ final class FolderTreeController: NSViewController {
     /// Expands the tree down to `url` and selects it (when it's under Home or a disk). nil (Recents, a search): nothing
     /// is selected.
     func reveal(_ url: URL?) {
+        currentSMB = nil
         guard let url else {
             current = nil
             return isViewLoaded ? deselect() : ()
@@ -457,6 +475,8 @@ final class FolderTreeController: NSViewController {
             guard let row = roots.first(where: { $0.kind == .server && $0.url.lastPathComponent == server.id }) else { return deselect() }
             return select(row)
         }
+        if let profile = smb.profiles.first(where: { smb.contains(target, profile: $0, in: places.snapshot.volumes) }),
+           let row = roots.first(where: { $0.kind == .smb(profile.id) }) { return select(row) }
         let path = target.fileViewKey
         // The deepest root that holds it: Home before the startup disk.
         guard let root = roots.filter({ $0.kind == .folder && (path == $0.url.fileViewKey || path.hasPrefix($0.url.fileViewKey == "/" ? "/" : $0.url.fileViewKey + "/")) })
@@ -464,6 +484,19 @@ final class FolderTreeController: NSViewController {
             return deselect()
         }
         descend(from: root, toward: path, generation: generation)
+    }
+
+    func revealSMB(_ id: UUID) {
+        current = nil
+        currentSMB = id
+        guard isViewLoaded, isActive else { return }
+        if let node = roots.first(where: { $0.kind == .smb(id) }) { select(node) }
+        else { deselect() }
+    }
+
+    private func revealCurrent() {
+        if let currentSMB { revealSMB(currentSMB) }
+        else if let current { reveal(current) }
     }
 
     private func descend(from node: FolderNode, toward path: String, generation: Int) {
@@ -560,17 +593,26 @@ extension FolderTreeController: NSOutlineViewDataSource, NSOutlineViewDelegate {
             cell.identifier = id
             return cell
         }()
-        cell.configure(title: node.title, symbol: node.symbol, help: Format.tildePath(node.url))
+        if case .smb(let id) = node.kind, let profile = smb.profile(id) {
+            let mounted = smb.mountedVolume(for: profile, in: places.snapshot.volumes) != nil
+            cell.configure(title: node.title, symbol: node.symbol, tint: mounted ? .systemGreen : nil, help: profile.shownAddress)
+        } else {
+            cell.configure(title: node.title, symbol: node.symbol, help: Format.tildePath(node.url))
+        }
         return cell
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
         guard !suppressSelection, let node = outline.item(atRow: outline.selectedRow) as? FolderNode else { return }
-        current = node.url
+        if node.url.isFileURL {
+            current = node.url
+            currentSMB = nil
+        }
         switch node.kind {
         case .folder, .trash: onSelect?(.folder(node.url))
         case .containers: onSelect?(.containers)
         case .server: onSelect?(.server(node.url.lastPathComponent))
+        case .smb(let id): onSelect?(.smb(id))
         }
     }
 
@@ -583,7 +625,7 @@ extension FolderTreeController: NSOutlineViewDataSource, NSOutlineViewDelegate {
     func outlineView(_ outlineView: NSOutlineView, validateDrop info: NSDraggingInfo, proposedItem item: Any?,
                      proposedChildIndex index: Int) -> NSDragOperation {
         let urls = FileDrop.urls(info, copies: copies)
-        guard let node = item as? FolderNode, index == NSOutlineViewDropOnItemIndex, !urls.isEmpty, node.kind != .containers, node.kind != .server else {
+        guard let node = item as? FolderNode, index == NSOutlineViewDropOnItemIndex, !urls.isEmpty, node.acceptsFileDrop else {
             springLoader.hover(nil, drag: info.draggingSequenceNumber)
             return []
         }
@@ -609,7 +651,7 @@ extension FolderTreeController: NSOutlineViewDataSource, NSOutlineViewDelegate {
 
     func outlineView(_ outlineView: NSOutlineView, acceptDrop info: NSDraggingInfo, item: Any?, childIndex index: Int) -> Bool {
         springLoader.cancel()
-        guard let node = item as? FolderNode, node.kind != .containers, node.kind != .server else { return false }
+        guard let node = item as? FolderNode, node.acceptsFileDrop else { return false }
         let urls = FileDrop.urls(info, copies: copies)
         if node.kind == .trash {
             guard !urls.isEmpty, canTrash?(urls) == true else { return false }
@@ -630,7 +672,12 @@ extension FolderTreeController: NSOutlineViewDataSource, NSOutlineViewDelegate {
 extension FolderTreeController: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        guard let node = outline.item(atRow: outline.clickedRow) as? FolderNode, node.kind != .containers, node.kind != .server else { return }
+        guard let node = outline.item(atRow: outline.clickedRow) as? FolderNode else { return }
+        if case .smb(let id) = node.kind {
+            addSMBMenu(to: menu, id: id, connect: #selector(openSMB(_:)), manage: #selector(manageSMB(_:)), target: self)
+            return
+        }
+        guard node.acceptsFileDrop else { return }
         func add(_ title: String, _ action: Selector) {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
             item.target = self
@@ -650,6 +697,13 @@ extension FolderTreeController: NSMenuDelegate {
             add(String(localized: "Add to Favorites"), #selector(addFavorite(_:)))
         }
     }
+
+    @objc private func openSMB(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? UUID else { return }
+        onSelect?(.smb(id))
+    }
+
+    @objc private func manageSMB(_ sender: NSMenuItem) { onManageSMB?() }
 
     @objc private func openInNewTab(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }

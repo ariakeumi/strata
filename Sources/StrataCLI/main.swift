@@ -5,7 +5,7 @@ import StrataSupport
 //
 //   strata                 open the current folder
 //   strata <path>…         open folders, or reveal files
-//   strata -s <query>      search everywhere (same syntax as the search field)
+//   strata -s <query>      search the current working directory
 //   strata -s <query> -i <folder>   search inside a folder
 //   strata -w <name>       open a saved workspace
 
@@ -23,8 +23,8 @@ usage: strata [path …]
        strata -w <workspace>
 
   path             folders open in a window; files are shown selected in their folder
-  -s, --search     search the index (ext:pdf, kind:image, size:>10mb, modified:<7d, in:~/Documents …)
-  -i, --in         limit the search to a folder
+  -s, --search     search the current working directory (ext:pdf, kind:image, size:>10mb, modified:<7d, in:~/Documents …)
+  -i, --in         search this folder instead
   -w, --workspace  open a saved workspace (Window ▸ Workspaces), by name
 """
 
@@ -99,7 +99,7 @@ if let workspace {
     var components = URLComponents()
     components.scheme = "strata"
     components.host = "search"
-    components.queryItems = [URLQueryItem(name: "q", value: query)] + (scope.map { [URLQueryItem(name: "in", value: absolute($0).path)] } ?? [])
+    components.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "in", value: scope.map { absolute($0).path } ?? cwd.path)]
     guard let url = components.url else { writeError(usage); exit(2) }
     targets = [url]
 } else {

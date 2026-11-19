@@ -17,7 +17,6 @@ enum MainMenu {
     private static func appMenu() -> NSMenuItem {
         submenu("Strata", [
             item("About Strata", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
-            StrataCommand.checkForUpdates.menuItem(),
             .separator(),
             StrataCommand.showSettings.menuItem(),
             .separator(),
@@ -48,6 +47,7 @@ enum MainMenu {
             .separator(),
             StrataCommand.toggleQuickLook.menuItem(),
             StrataCommand.renameSelection.menuItem(),
+            hidden(StrataCommand.renameSelectionKeypad.menuItem()),
             StrataCommand.editTags.menuItem(),
             StrataCommand.compress.menuItem(),
             StrataCommand.extract.menuItem(),
@@ -125,6 +125,7 @@ enum MainMenu {
             StrataCommand.goDownloads.menuItem(),
             StrataCommand.goApplications.menuItem(),
             StrataCommand.goTrash.menuItem(),
+            submenu("Sidebar", StrataCommand.sidebarFolders.map { $0.menuItem() }),
             .separator(),
             StrataCommand.goToFolder.menuItem(),
             StrataCommand.editLocation.menuItem(),

@@ -5,9 +5,7 @@
 <h1 align="center">Strata Files</h1>
 
 <p align="center">
-  <b>The file manager your Mac deserves.</b><br>
-  Find anything in milliseconds, see exactly where your space went, and fly through your files from the keyboard,<br>
-  in a native app that feels like it shipped with macOS.
+  <b>The file manager your Mac deserves.</b><br> Search the current folder, see where your space went, and work from the keyboard,<br> in a native app that feels like it shipped with macOS.
 </p>
 
 <p align="center">
@@ -23,7 +21,7 @@
 <!-- readme-languages:end -->
 
 <p align="center">
-  <img src="docs/screenshots/themes.png" alt="Strata with demo folders in Blue, Teal, Sand, Purple and native System Light" width="900">
+  <img src="docs/screenshots/hero.png" alt="List view with live folder sizes" width="900">
 </p>
 
 ---
@@ -34,51 +32,38 @@ Finder is fine until you need to find something, figure out what's eating your d
 without a beachball. Strata keeps everything you already know: the look, the shortcuts, drag and drop, Quick Look,
 tabs. Then it adds what you've been missing:
 
-- **Search that keeps up with you.** Every file in your home folder and Applications, searchable as you type.
-  Once the index is built, results arrive in milliseconds, even across millions of files.
-- **Sizes you can trust.** Folders show their real size the moment you open them, kept current as files change.
+- **Folder search.** Press ⌘F to find files in the current folder and its subfolders.
+- **Folder sizes.** Measure space in the Inspector and Disk Usage view.
 - **A keyboard-first workflow.** Jump anywhere with ⌘K, type to filter any folder, and keep your hands off the
   mouse if you like.
 - **File operations without fear.** Pause and resume big copies, see conflicts side by side before replacing
   anything, and undo past operations, even after you quit.
-- **Made for people who build things.** Git status on every file, project-aware cleanup, Open in Terminal, and
-  previews for code, data and archives.
+- **Made for people who build things.** Open folders in Terminal and preview code, data and archives.
 
-## Find anything, instantly
+## Search the current folder
 
-Type a name, use precise filters, or just say what you mean: *"videos bigger than 500 MB"*,
-*"pdfs from last month"*. Strata understands plain English, shows you how it read your search, and answers
-before you finish typing. Go further with `regex:` and **Match Case**, or ask Spotlight about what's in the files:
-`camera:iphone`, `width:>1920`, `duration:>10m`, *"photos taken with iPhone"*. Save any search to the sidebar and it
-stays live as files change.
+Search by name, use filters, or type a query like *"videos bigger than 500 MB"* or *"pdfs from last month"*. Use `regex:` and **Match Case** for filename searches. Queries such as `camera:iphone`, `width:>1920` and `duration:>10m` look up metadata with Spotlight. Save a search to the sidebar to run it again.
 
 <p align="center"><img src="docs/screenshots/search.png" alt="A plain-English search showing large videos" width="820"></p>
 
 ## Jump anywhere with ⌘K
 
-One shortcut opens a command palette that knows your most-used folders, the files in your index and Strata's
-commands. Type `acme-web/` to list a project's contents without opening a single window, or plain English like
-`pdfs from last week`.
+One shortcut opens a command palette with your most-used folders, items in the current folder, and Strata’s commands. Type `acme-web/` to list a project’s contents.
 
-Prefer a search box like Windows has? Turn on Settings ▸ General ▸ Search box in the Dock: a box sits in the Dock next
-to Strata's icon and finds what ⌘K finds, plus your apps and documents by what they say, from any app.
+Turn on Settings ▸ General ▸ Search box in the Dock to find apps, folders and commands. The Dock box can also start a search in Strata’s current folder.
 
 <p align="center"><img src="docs/screenshots/palette.png" alt="The command palette listing the contents of a project" width="820"></p>
 
 ## See where your space went
 
 Folder sizes appear the moment you open a folder, without waiting on "Calculating…". Switch to **Disk Usage** to see
-your folders as a map, then use **Large Files** and **Duplicates** in the sidebar to reclaim gigabytes in minutes.
+your folders as a map.
 
 <p align="center"><img src="docs/screenshots/treemap.webp" alt="The disk usage map of a folder" width="820"></p>
 
 ## Look inside. Stay where you are.
 
-Press **Space** to preview a file or look inside a folder or archive. Browse the list or thumbnails, preview files
-alongside, and filter, sort, open or copy just what you need without leaving your current folder. Use the arrow keys
-to step between files while Quick Look stays open.
-
-<p align="center"><img src="docs/screenshots/quicklook.webp" alt="Quick Look above the main browser, listing folder contents and previewing a Markdown file" width="820"></p>
+Press **Space** to preview the selection with macOS Quick Look. The inspector offers additional format-specific previews.
 
 | Format | What you can do |
 |---|---|
@@ -86,11 +71,11 @@ to step between files while Quick Look stays open.
 | **Jupyter notebooks (`.ipynb`)** | Read Markdown, code cells and saved outputs together. |
 | **Code and configuration** | Syntax highlighting, line numbers, Find and word wrap for Swift, Python, JavaScript, TypeScript, Rust, Go, C/C++, shell scripts, YAML, TOML, XML, Dockerfiles and more. |
 | **JSON** | Read formatted JSON, JSONC and JSON5 without opening an editor. |
-| **JSON Lines, HAR and Xcode catalogs** | Search rows in `.jsonl`, `.ndjson`, `.har` and `.xcstrings` files. |
-| **Subtitles (`.srt`, `.vtt`)** | Read cues and timestamps in a searchable table. |
+| **JSON Lines, HAR and Xcode catalogs** | Browse rows in `.jsonl`, `.ndjson`, `.har` and `.xcstrings` files. |
+| **Subtitles (`.srt`, `.vtt`)** | Read cues and timestamps in a table. |
 | **HTML** | Switch between the rendered page and its source. |
-| **CSV, TSV and PSV** | Page through data, sort columns, find values and copy individual cells or rectangles. |
-| **SQLite** | Choose a table or view, page through its rows, sort, find and copy cells. |
+| **CSV, TSV and PSV** | Page through data, sort columns and copy individual cells or rectangles. |
+| **SQLite** | Choose a table or view, page through its rows, sort and copy cells. |
 | **Excel and OpenDocument (`.xlsx`, `.ods`)** | Switch worksheets and explore their saved values with the same table controls. |
 | **Parquet** | Inspect the file schema, column types and row count. |
 | **NumPy and AI models** | Inspect array shapes and tensor details in NumPy (`.npy`), SafeTensors and GGUF files. |
@@ -99,57 +84,37 @@ to step between files while Quick Look stays open.
 | **Routes (`.gpx`, `.kml`, `.geojson`)** | Explore routes on a map with distance and elevation details. |
 | **Certificates and provisioning profiles** | Inspect identity, validity and signing details in `.cer`, `.crt`, `.der`, `.pem`, `.mobileprovision` and `.provisionprofile` files. |
 | **STL and 3MF models** | Rotate and zoom 3D models, with triangle counts and dimensions. |
-| **EPUB and comics** | Read book chapters and browse comic pages in EPUB, CBZ, CBR, CB7 and CBT files. |
+| **EPUB and comics** | Read EPUB chapters and browse comic archives. |
 | **OneNote** | Navigate notebook contents and read section pages (`.one`, `.onetoc2`), or browse packaged notebooks (`.onepkg`). |
-| **Archives and packages** | Browse ZIP, 7z, RAR, TAR, ISO and CAB, plus packages such as JAR, APK, IPA and WHL. Preview or copy individual files inside. |
+| **Archives and packages** | List ZIP, 7z, RAR, TAR, ISO and CAB contents, plus packages such as JAR, APK, IPA and WHL. |
 
-PDFs support text selection and copying. Photos, audio and video have native previews, with video storyboards and
-audio waveforms. Other formats use macOS Quick Look. File previews are also available in the inspector.
+The inspector supports text selection and copying in PDF previews, video storyboards, and audio waveforms.
 
 ## Five views. Two panes.
 
-Icons, List, Columns, Gallery and Disk Usage, one keystroke apart (⌘1–⌘5, in Finder's order), with ⌘+ and ⌘− for the
+Icons, List, Columns, Gallery and Disk Usage, one keystroke apart (⌃⌘1–⌃⌘5, in Finder's order), with ⌘+ and ⌘− for the
 text size in List and Columns. Turn on **Dual Pane** to work with two folders side by side, copy or move between them
 with a keystroke, or compare and sync them.
 
 <table>
   <tr>
-    <td><strong>Icons · ⌘1</strong><br><img src="docs/screenshots/grid.webp" alt="Icon view with image thumbnails"></td>
-    <td><strong>List · ⌘2</strong><br><img src="docs/screenshots/list.webp" alt="List view with live folder sizes"></td>
+    <td><strong>Icons · ⌃⌘1</strong><br><img src="docs/screenshots/grid.webp" alt="Icon view with image thumbnails"></td>
+    <td><strong>List · ⌃⌘2</strong><br><img src="docs/screenshots/list.webp" alt="List view with live folder sizes"></td>
   </tr>
   <tr>
-    <td><strong>Columns · ⌘3</strong><br><img src="docs/screenshots/columns.webp" alt="Column view expanded through nested folders with an image preview"></td>
-    <td><strong>Gallery · ⌘4</strong><br><img src="docs/screenshots/gallery.webp" alt="Gallery view with a large photo preview and thumbnail filmstrip"></td>
+    <td><strong>Columns · ⌃⌘3</strong><br><img src="docs/screenshots/columns.webp" alt="Column view expanded through nested folders with an image preview"></td>
+    <td><strong>Gallery · ⌃⌘4</strong><br><img src="docs/screenshots/gallery.webp" alt="Gallery view with a large photo preview and thumbnail filmstrip"></td>
   </tr>
   <tr>
-    <td><strong>Disk Usage · ⌘5</strong><br><img src="docs/screenshots/disk-usage.webp" alt="Disk Usage view mapping folders by size"></td>
+    <td><strong>Disk Usage · ⌃⌘5</strong><br><img src="docs/screenshots/disk-usage.webp" alt="Disk Usage view mapping folders by size"></td>
     <td><strong>Dual Pane · ⌘\</strong><br><img src="docs/screenshots/dual.webp" alt="Dual Pane with project files and photos side by side"></td>
   </tr>
 </table>
 
-## Your colors. Still your Mac.
-
-<p align="center"><img src="docs/screenshots/appearance.webp" alt="Appearance settings showing the color themes and System" width="632"></p>
-
-Choose **System** for the Mac’s own colors, or one of seventeen presets: **Graphite, Blue, Green, Purple, Sand, Teal,
-Rose, Amber, Slate, Sage, Coral, Plum, Ice, Midnight, Catppuccin, Dracula and Tokyo Night**. Each has a light and dark
-palette, with coordinated colors across the file views, sidebar, inspector, toolbar and secondary windows. Native macOS
-controls and familiar behavior stay intact.
-
-Find them in **Settings ▸ Appearance ▸ Color theme**. Turn **Window tint** off to keep native backgrounds while
-using the palette for selections and accents. You can also adjust row density and the size of file names.
-
-Want your own palette? Put a JSON theme file in `~/Library/Application Support/Strata/Themes/` and choose it in
-Settings. To contribute it, add the file and its translated name, then rebuild; no Swift changes are needed. The
-[theme guide](docs/themes.md) explains the format and the light/dark and accessibility checks.
-
 ## Made for developers
 
-### Repositories
-
-- **Git at a glance.** File status appears beside each file, and the current branch stays in the path bar.
-- **Project tools in the inspector.** Strata recognizes Node, Rust, Swift, .NET, Python, Go and more. Run a project's
-  scripts or reclaim space from build folders such as `node_modules`; cleanup sends them to the Trash.
+- **Project tools in the inspector.** Strata recognizes Node, Rust, Swift, .NET, Python, Go and more. Run project scripts
+  and see how much space build folders such as `node_modules` use.
 - **Previews alongside your files.** Read code, Markdown, HTML, JSON, CSV, SQLite databases and archives in the inspector.
 
 ### Servers
@@ -172,13 +137,6 @@ Works with **Docker Desktop, OrbStack, Colima, Podman and Rancher Desktop**.
 - **Control Compose stacks.** Start, stop or restart a project's containers together, and open the project in your terminal
   or code editor.
 
-<table>
-  <tr>
-    <td><img src="docs/screenshots/devmode.png" alt="Git badges, branch pill and a code preview"></td>
-    <td><img src="docs/screenshots/project.png" alt="The project inspector with build artifacts and scripts"></td>
-  </tr>
-</table>
-
 ## Everything else you'd expect, done right
 
 | | |
@@ -186,14 +144,12 @@ Works with **Docker Desktop, OrbStack, Colima, Podman and Rancher Desktop**.
 | **Trash** | In the sidebar, like Finder: Put Back (also what Finder trashed), Delete Immediately and Empty Trash, with other disks' Trashes counted. |
 | **Archives** | Compress and extract zip, tar, 7z, rar and more, safely: nothing escapes its folder and downloads stay quarantined. Or double-click a zip to browse it like a folder and copy things out. |
 | **Tags** | Finder's tags everywhere: colored dots, the color row in the context menu, a tag field in the inspector, a Tags section in the sidebar and `tag:` in search. |
-| **Books and comics** | Cover thumbnails for EPUB, CBZ, CBR, CB7 and CBT. Browse comic pages with Space, read EPUB chapters in Quick Look or the inspector, and search with `kind:book` or `kind:comic`. |
 | **Batch rename** | Replace text (or a regular expression), add text, number with a format or change case, previewed live, undone in one step. |
 | **Get Info** | Edit comments, the app a file opens with, Locked and permissions right in the inspector. |
-| **App updates** | Right-click apps and choose Check for Updates… to see which have a newer version, from their own update feed or the App Store. |
 | **Network shares** | Connect to SMB, AFP, NFS and WebDAV shares (⌥⌘K), with macOS's own login and your keychain; SFTP servers and S3 buckets are covered above. |
 | **Cloud folders** | See what's only in iCloud Drive or another cloud folder, with Download Now and Remove Download. |
 | **Compare and sync** | Compare the two panes' folders and sync them both ways, one way, or as a mirror, verified and undoable. |
-| **Your shortcuts, your look** | Change any menu shortcut in Settings. Choose a color theme in light or dark mode, adjust row density and set the size of file names. |
+| **Your shortcuts, your look** | Change any menu shortcut in Settings. Follow the system appearance or choose Light or Dark. Adjust row density and file name size. |
 | **Copy queue** | Big copies run in the background with progress you can pause, resume or cancel. Conflicts are asked up front, with a side-by-side comparison and a diff for text files, and folders can be merged. Turn on **Verify copies** in Settings to check that every byte arrived. Moves between disks keep the original if it changed while copying. |
 | **History** | Renames, moves, copies and deletions are recorded. Undo them later, even days later and after a restart, as long as the items are still where they were left. |
 | **Recents** | Files you changed in the last 7 days, across your home folder, in one place. |
@@ -214,12 +170,10 @@ Click **Keyboard Shortcuts** at the bottom of the sidebar, or press ⌘/.
 
 ## Private by design
 
-Strata runs entirely on your Mac. The search index, summaries and AI features are local: no accounts, no tracking,
-no cloud. Its file index, content index and history are encrypted on disk with a key in your keychain. And a
-folder you browse can't run its own code just because you looked at it: Strata switches off the git features a
-downloaded repository could use to do that. It only goes online to check for updates (its own, if you allow it, and
-other apps' when you ask it to) and to the servers you connect to. Containers' and servers' files are read as you
-browse and cleared when Strata quits; SFTP logs in with your own SSH setup, and an S3 secret key stays in your keychain.
+Strata runs entirely on your Mac. Search, summaries and AI features run locally, with no accounts,
+tracking or cloud processing. Strata encrypts operation history on disk with a key kept in your Keychain.
+It connects to the servers you add. Containers' and servers' files are read as you browse and cleared
+when Strata quits. SFTP logs in with your own SSH setup, and an S3 secret key stays in your keychain.
 
 Read the [Strata app Privacy Policy](https://stratafiles.app/privacy/) for details about local data, storage,
 permissions, network connections and your controls.
@@ -239,8 +193,7 @@ The README translations share this English source and are generated from catalog
 
 Download the latest version from [GitHub Releases](https://github.com/cristipufu/strata-files/releases/latest), open the disk
 image and drag Strata to Applications. It needs an Apple silicon Mac running **macOS 26**. Releases are signed and
-notarized by Apple, so Strata opens like any other app. It updates itself: **Strata ▸ Check for Updates…**, or
-automatically if you allow it (updates are signed and checked before they're installed).
+notarized by Apple, so Strata opens like any other app.
 
 Homebrew:
 
@@ -262,9 +215,8 @@ and measure everything without asking folder by folder. Strata walks you through
 ## Releasing
 
 Push a version tag and the [Release workflow](.github/workflows/release.yml) builds Strata on a Mac, signs it with the
-Developer ID certificate, has Apple notarize it, and publishes a GitHub Release with `Strata.dmg`, `Strata.zip`, their
-checksums and `appcast.xml`, the signed update feed installed copies check. The release notes come from
-`docs/release-notes/<version>.md` when there is one, and the update window shows them too.
+Developer ID certificate, has Apple notarize it, and publishes a GitHub Release with `Strata.dmg`, `Strata.zip` and
+their checksums. The release notes come from `docs/release-notes/<version>.md` when there is one.
 
 ```sh
 git tag v0.2.0 && git push origin v0.2.0

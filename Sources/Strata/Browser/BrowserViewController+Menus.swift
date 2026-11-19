@@ -19,6 +19,17 @@ extension BrowserViewController {
     // MARK: - Context menu
 
     func makeContextMenu() -> NSMenu {
+        if smbShares != nil {
+            let menu = NSMenu()
+            menu.autoenablesItems = false
+            let commands: [StrataCommand] = presentationSelection.isEmpty ? [.reloadFolder] : [.openSelection, .reloadFolder]
+            for command in commands {
+                let item = command.menuItem()
+                item.target = self
+                menu.addItem(item)
+            }
+            return menu
+        }
         let facts = contextMenuFacts
         let urls = facts.selection.map(\.url)
         let menu = BrowserContextMenu(facts: facts, target: self) { [weak self] tag in
@@ -48,9 +59,7 @@ extension BrowserViewController {
             renameTitle: renameTitle,
             compressTitle: compressTitle,
             extractTitle: extractTitle,
-            appUpdatesTitle: appUpdatesTitle,
             hasArchives: !selectedArchives.isEmpty,
-            hasApps: !selectedApps.isEmpty,
             containers: selectedContainers,
             canDownload: !downloadableCloudURLs.isEmpty,
             canRemoveDownload: selectedCloudStatuses.contains(.downloaded),
@@ -121,12 +130,13 @@ extension BrowserViewController {
     // MARK: - Drag and drop
 
     func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
-        guard let node = item as? FileNode, node.groupTitle == nil else { return nil }
+        guard let node = item as? FileNode, node.url.isFileURL else { return nil }
         return ContainerDragItem.writer(for: node.url, copies: services.copies)
     }
 
     func outlineView(_ outlineView: NSOutlineView, validateDrop info: NSDraggingInfo, proposedItem item: Any?,
                      proposedChildIndex index: Int) -> NSDragOperation {
+        guard smbShares == nil else { return [] }
         let urls = draggedURLs(info) ?? []
         springLoader.hover(springTarget(item, index, urls, during: info), drag: info.draggingSequenceNumber)
         guard !urls.isEmpty, let target = retargetDrop(outlineView, item) else { return [] }
@@ -137,9 +147,10 @@ extension BrowserViewController {
 
     func outlineView(_ outlineView: NSOutlineView, acceptDrop info: NSDraggingInfo, item: Any?, childIndex index: Int) -> Bool {
         springLoader.cancel()
+        guard smbShares == nil else { return false }
         let dropTarget: URL?
         if let node = item as? FileNode {
-            dropTarget = node.groupTitle == nil && node.entry.isFolder ? node.url : nil
+            dropTarget = node.entry.isFolder ? node.url : nil
         } else {
             dropTarget = isShowingResults ? nil : directory
         }
@@ -153,7 +164,7 @@ extension BrowserViewController {
     /// The folder row a file drag rests on (not between rows, not one of the dragged items or inside one), to spring
     /// open.
     private func springTarget(_ item: Any?, _ index: Int, _ dragged: [URL], during info: NSDraggingInfo) -> URL? {
-        guard !dragged.isEmpty, index == NSOutlineViewDropOnItemIndex, let node = item as? FileNode, node.groupTitle == nil,
+        guard !dragged.isEmpty, index == NSOutlineViewDropOnItemIndex, let node = item as? FileNode,
               node.entry.isFolder, !FileDrop.isInside(dragged, node.url, during: info),
               SpringLoader.canOpen(node.url, browsing: directory, during: info) else { return nil }
         return node.url
@@ -166,12 +177,12 @@ extension BrowserViewController {
     }
 
     private func retargetDrop(_ outlineView: NSOutlineView, _ item: Any?) -> URL? {
-        if let node = item as? FileNode, node.groupTitle == nil {
+        if let node = item as? FileNode {
             if node.entry.isFolder {
                 outlineView.setDropItem(node, dropChildIndex: NSOutlineViewDropOnItemIndex)
                 return node.url
             }
-            if let parent = node.parent, parent.groupTitle == nil, parent.entry.isFolder {
+            if let parent = node.parent, parent.entry.isFolder {
                 outlineView.setDropItem(parent, dropChildIndex: NSOutlineViewDropOnItemIndex)
                 return parent.url
             }
@@ -191,6 +202,10 @@ extension BrowserViewController {
 extension BrowserViewController: NSMenuItemValidation, PaneCommandState {
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         guard let action = item.action else { return true }
+        if smbShares != nil {
+            if action == #selector(reloadFolder(_:)) { return true }
+            if action == #selector(openSelection(_:)) { return !presentationSelection.isEmpty }
+        }
         if action == StrataCommand.getInfo.action { return canGetInfo(item.representedObject) }
         if let shown = validateViewOption(item, action) { return shown }
         let answer = PaneCommandAvailability.answer(for: action, represented: item.representedObject, in: self)
@@ -234,7 +249,7 @@ extension BrowserViewController: NSMenuItemValidation, PaneCommandState {
         case #selector(sortBy(_:)):
             let key = Self.sortMenuKeys.indices.contains(item.tag) ? Self.sortMenuKeys[item.tag].key.rawValue : ""
             item.state = outlineView.sortDescriptors.first?.key == key ? .on : .off
-            return !isShowingResults
+            return !isShowingResults || smbShares != nil
         default:
             return nil
         }

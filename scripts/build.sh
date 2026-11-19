@@ -37,22 +37,12 @@ app=build/Strata.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Helpers"
 cp "$bins/Strata" "$app/Contents/MacOS/Strata"
-# Sparkle (updates) travels in Frameworks; the binary looks for it there.
-sparkle=$(find .build/artifacts -path "*Sparkle.xcframework/macos-*/Sparkle.framework" -maxdepth 6 -type d 2>/dev/null | head -1)
-if [[ -n "$sparkle" ]]; then
-  mkdir -p "$app/Contents/Frameworks"
-  ditto "$sparkle" "$app/Contents/Frameworks/Sparkle.framework"
-  # The XPC services are for sandboxed apps; Strata isn't one.
-  rm -rf "$app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" "$app/Contents/Frameworks/Sparkle.framework/XPCServices"
-  install_name_tool -add_rpath "@executable_path/../Frameworks" "$app/Contents/MacOS/Strata" 2>/dev/null || true
-fi
 # The command-line tool lives in Helpers: "strata" would clash with "Strata" in MacOS on a case-insensitive disk.
 cp "$bins/StrataCLI" "$app/Contents/Helpers/strata"
-# SwiftPM resources are shipped with the app, so theme discovery also works away from the checkout.
-cp -R "$bins/Strata_StrataTheme.bundle" "$app/Contents/Resources/Strata_StrataTheme.bundle"
+# Ship the preview resources so they can be found away from the checkout.
 cp -R "$bins/Strata_StrataPreviews.bundle" "$app/Contents/Resources/Strata_StrataPreviews.bundle"
 python3 scripts/check-app-resources.py "$app" "$bins/StrataResourceCheck" Tests/PreviewDocuments/07-Issue36-Mermaid.md
-# Credits for the third-party software Strata includes or builds on (Sparkle, libarchive) travel with the app.
+# Credits for the third-party software Strata includes or builds on travel with the app.
 cp THIRD_PARTY_NOTICES.md "$app/Contents/Resources/THIRD_PARTY_NOTICES.md"
 cp Resources/Info.plist "$app/Contents/Info.plist"
 if [[ -n "${STRATA_VERSION:-}" ]]; then
@@ -81,17 +71,12 @@ identity="${STRATA_SIGNING_IDENTITY:-}"
 if [[ -z "$identity" ]]; then
   identity=$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)
 fi
-sign=(--force --options runtime --sign "${identity:--}")
-if [[ -n "${STRATA_KEYCHAIN:-}" ]]; then sign+=(--keychain "$STRATA_KEYCHAIN"); fi
-if [[ "${STRATA_TIMESTAMP:-}" == 1 && -n "$identity" ]]; then sign+=(--timestamp); fi
-# Inside out: Sparkle's helpers, then the framework, the command-line helper, the archive service, and the bundle that
-# seals them all.
-framework="$app/Contents/Frameworks/Sparkle.framework"
-if [[ -d "$framework" ]]; then
-  codesign "${sign[@]}" "$framework/Versions/B/Autoupdate" >/dev/null
-  codesign "${sign[@]}" "$framework/Versions/B/Updater.app" >/dev/null
-  codesign "${sign[@]}" "$framework" >/dev/null
-fi
+identity="${identity:--}"
+sign_options=(--force --options runtime)
+if [[ -n "${STRATA_KEYCHAIN:-}" ]]; then sign_options+=(--keychain "$STRATA_KEYCHAIN"); fi
+if [[ "${STRATA_TIMESTAMP:-}" == 1 && "$identity" != - ]]; then sign_options+=(--timestamp); fi
+sign=("${sign_options[@]}" --sign "$identity")
+# Sign the helpers and the archive service before sealing the app bundle.
 codesign "${sign[@]}" "$app/Contents/Helpers/strata" >/dev/null
 # Archives are read in an XPC service with an App Sandbox of its own, by a worker per read that inherits it: neither can
 # reach your files, the network or devices, and both refuse to read without their entitlements. macOS ties a sandbox
@@ -103,7 +88,7 @@ scripts/archive-service.sh "$app" "$bins" --identifier "$local_identifier" \
   --service-entitlements Sources/StrataArchiveService/ArchiveService.entitlements \
   --worker-entitlements Sources/StrataArchiveWorker/ArchiveWorker.entitlements -- "${sign[@]}"
 codesign "${sign[@]}" "$app" >/dev/null
-if [[ -n "$identity" ]]; then signer="Developer ID"; else signer="ad-hoc"; fi
+if [[ "$identity" == - ]]; then signer="ad-hoc"; else signer="Developer ID"; fi
 echo "Built $app ($config, signed $signer)"
 
 if [[ "${2:-}" == "--open" ]]; then

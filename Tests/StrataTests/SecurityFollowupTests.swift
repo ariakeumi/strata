@@ -54,20 +54,6 @@ struct SecurityFollowupTests {
         #expect(tree.snapshot() == ["file", "sibling"])
     }
 
-    @Test func bundlePlistsRefuseExcessiveSharedStrings() throws {
-        let tree = try TestTree("Fixture.app/Contents/", "sibling")
-        let payload = plist([string("CFBundleVersion"), string("5"), string("payload"), string(String(repeating: "x", count: 1024)),
-                             header(0xA0, count: 2000) + [UInt8](repeating: 3, count: 2000), [0xD2, 0, 2, 1, 4]], top: 5)
-        let info = tree.url("Fixture.app/Contents/Info.plist")
-        try payload.write(to: info)
-        #expect(InstalledApp.read(tree.url("Fixture.app")).source == .unreadable)
-        #expect(try Data(contentsOf: info) == payload)
-        let ordinary = try PropertyListSerialization.data(fromPropertyList: ["CFBundleVersion": "5"], format: .binary, options: 0)
-        try ordinary.write(to: info)
-        #expect(InstalledApp.read(tree.url("Fixture.app")).build == "5")
-        #expect(tree.snapshot() == ["Fixture.app/", "Fixture.app/Contents/", "Fixture.app/Contents/Info.plist", "sibling"])
-    }
-
     @Test func malformedBinaryCommentsNeverBecomePlainText() throws {
         let tree = try TestTree("file", "sibling")
         try attribute(Data("bplist00not a property list".utf8), commentAttribute, at: tree.url("file"))

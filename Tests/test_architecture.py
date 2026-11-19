@@ -22,7 +22,7 @@ class ModuleBoundaryTests(unittest.TestCase):
             for target in targets
         }
         interface = {"Strata", "StrataPreviews", "StrataTheme", "CPreviewText", "CPreviewWeb"}
-        for library in ("StrataSupport", "StrataModel", "StrataArchives", "StrataIndex",
+        for library in ("StrataSupport", "StrataModel", "StrataArchives", "StrataSearch",
                         "StrataConnections", "StrataFiles", "StrataQueue", "StrataAI",
                         "StrataDev", "StrataSearch"):
             with self.subTest(library=library):

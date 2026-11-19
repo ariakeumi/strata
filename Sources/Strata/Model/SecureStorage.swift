@@ -5,7 +5,7 @@ import Synchronization
 import os
 import StrataSupport
 
-/// Strata's saved state (the file index, the content index, the operation history) reveals what is inside folders that
+/// Strata's operation history reveals what is inside folders that
 /// macOS guards with privacy prompts, like Documents, Desktop and Downloads. A plain copy would let anything running as
 /// you read it without ever asking. So every store is encrypted (AES-GCM) with a key kept in your login keychain, which
 /// only Strata can read without asking you, in a folder private to your account. Files are written to a fresh
@@ -126,12 +126,6 @@ nonisolated package enum SecureStorage {
         }
     }
 
-    /// Deletes a store no copy of Strata still in use reads, with the temporary files its saves left behind.
-    package static func removeSuperseded(_ url: URL) {
-        removeLegacy(url)
-        sweepStaleTemporaries(of: url)
-    }
-
     // MARK: Key
 
     private static let service = "Strata Safe Storage"
@@ -157,7 +151,7 @@ nonisolated package enum SecureStorage {
             kSecAttrLabel: service,
             kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             kSecAttrSynchronizable: false,
-            kSecAttrDescription: String(localized: "Encrypts Strata's search index and history",
+            kSecAttrDescription: String(localized: "History",
                                         comment: "Keychain item description, shown in Keychain Access"),
             kSecValueData: key.withUnsafeBytes { Data($0) },
         ]
@@ -184,7 +178,7 @@ nonisolated package enum SecureStorage {
         package init() {}
     }
 
-    /// The store's identity: its path inside `directory` ("semantic/index.sealed"), else its full path. Paths are used
+    /// The store's identity: its path inside `directory` ("history.sealed"), else its full path. Paths are used
     /// as given: standardizing would drop a "/private" prefix only once the file exists, so writer and reader differ.
     private static func storeName(_ url: URL, directory: URL) -> Data {
         let path = url.absoluteURL.path
@@ -324,7 +318,7 @@ nonisolated package enum SecureStorage {
         private let salt: Data
         private let name: Data
         /// Files written by the first format (no salt or store name in the associated data) are still read, so an
-        /// upgrade keeps history and the content index; they're rewritten in the current format at the next save.
+        /// upgrade keeps history and rewrites it in the current format at the next save.
         private let isLegacy: Bool
         /// Upper bound on the plaintext, for sanity-checking lengths before allocating.
         package let maximumLength: Int

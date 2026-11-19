@@ -162,31 +162,23 @@ import os
         #expect(tree.snapshot() == ["source.swift"])
     }
 
-    @Test func spaceAndInspectorKeepTheirOwnersWrappingPreference() async throws {
+    @Test func inspectorKeepsItsOwnersWrappingPreference() async throws {
         let tree = try TestTree("source.swift")
         try Data(String(repeating: "let value = 1; ", count: 30).utf8).write(to: tree.url("source.swift"))
         let first = try PreviewEnvironment(tree), second = try IndependentEnvironment()
         let before = tree.snapshot()
         first.preferences.previewWrapLines = false
         let entry = try #require(FileEntry(url: tree.url("source.swift")))
-        let file = PreviewFileView(thumbnails: first.services.thumbnails, copies: first.services.copies, preferences: first.preferences, clipboard: first.services.clipboard)
-        defer { file.close() }
-        file.frame = NSRect(x: 0, y: 0, width: 400, height: 250)
-        file.show(nil, root: entry)
         let inspector = InspectorViewController(services: first.services, previewScheduler: { $0.perform() })
         inspector.view.frame = NSRect(x: 0, y: 0, width: 400, height: 700)
         inspector.show(entries: [entry], folder: nil, folderSize: { _ in nil }, canMeasure: { _ in false })
         let rich = try #require(inspector.richPreview as? CodePreviewView)
         await rich.loadingTask?.value
-        let preview = try text(in: file)
         let info = try text(in: rich)
-        #expect(preview.textContainer?.widthTracksTextView == false)
         #expect(info.textContainer?.widthTracksTextView == false)
         second.preferences.previewWrapLines = false
         first.preferences.previewWrapLines = true
-        file.layoutSubtreeIfNeeded()
         rich.layoutSubtreeIfNeeded()
-        #expect(preview.textContainer?.widthTracksTextView == true)
         #expect(info.textContainer?.widthTracksTextView == true)
         #expect(!second.preferences.previewWrapLines)
         withExtendedLifetime((first, second)) {}

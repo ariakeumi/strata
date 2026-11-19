@@ -41,7 +41,7 @@ package nonisolated struct ProjectArtifact: Sendable, Hashable, Identifiable {
         case cache
         /// Installed dependencies: node_modules, vendor/bundle, .terraform.
         case dependencies
-        /// Virtual environments: regenerable, but slow to rebuild and easy to forget how. Not selected by default.
+        /// Virtual environments.
         case environment
     }
 
@@ -55,7 +55,6 @@ package nonisolated struct ProjectArtifact: Sendable, Hashable, Identifiable {
     package var files: Int?
 
     package var id: String { name }
-    package var isSelectedByDefault: Bool { role != .environment }
     package var isMeasured: Bool { bytes != nil }
 }
 
@@ -90,33 +89,12 @@ package nonisolated struct ProjectScript: Sendable, Hashable, Identifiable {
     }
 }
 
-package nonisolated struct ProjectGitSummary: Sendable, Equatable {
-    package let branch: GitBranchInfo
-    package let operation: GitOperation?
-    /// Changes inside the project folder (the whole repository when it's the root).
-    package let counts: GitStatusCounts
-    package let isRepositoryRoot: Bool
-    package let stashCount: Int
-    package let outcome: GitStatusSnapshot.Outcome
-
-    package init(_ snapshot: GitStatusSnapshot, folder: URL) {
-        let relative = snapshot.relativePath(folder) ?? ""
-        branch = snapshot.branch
-        operation = snapshot.operation
-        counts = snapshot.counts(inside: relative)
-        isRepositoryRoot = relative.isEmpty
-        stashCount = snapshot.stashCount
-        outcome = snapshot.outcome
-    }
-}
-
 /// Everything the project inspector shows for a folder. Built by `ProjectInfo.load(for:)`; the view never scans.
 package nonisolated struct ProjectInfo: Sendable {
     package let folder: URL
     package var kinds: [ProjectKindInfo]
     package var artifacts: [ProjectArtifact]
     package var scripts: [ProjectScript]
-    package var git: ProjectGitSummary?
 
     /// Some artifact sizes are still being measured.
     package var isMeasuring: Bool { artifacts.contains { !$0.isMeasured } }
@@ -144,7 +122,7 @@ package nonisolated enum ProjectDetector {
         detection.others()
         detection.taskRunners()
         return ProjectInfo(folder: folder, kinds: detection.kinds, artifacts: detection.artifacts,
-                           scripts: detection.scripts, git: nil)
+                           scripts: detection.scripts)
     }
 
     /// One folder's detection: its listing, read once, and what each kind of project found in it.
@@ -479,10 +457,10 @@ package nonisolated enum ProjectDetector {
     // MARK: Bounded searches
 
     private static let skippedFolders: Set<String> = [
-        "node_modules", ".git", ".venv", "venv", "env", ".tox", ".nox", "target", ".build", "bin", "obj", "build", "dist",
+        "node_modules", ".venv", "venv", "env", ".tox", ".nox", "target", ".build", "bin", "obj", "build", "dist",
     ]
 
-    /// Folders named `name` up to `depth` levels below `root`, skipping dependency, VCS and build trees.
+    /// Folders named `name` up to `depth` levels below `root`, skipping hidden, dependency and build folders.
     package static func findFolders(named name: String, under root: URL, depth: Int) -> [URL] {
         var results: [URL] = []
         var visited = 0

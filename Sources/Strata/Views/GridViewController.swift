@@ -126,9 +126,25 @@ final class GridViewController: NSViewController, FileItemCollection, FileCollec
         hasPartialListing = !content.complete
     }
 
+    private var savedPosition: CollectionPosition?
+
+    func releaseListing() {
+        savedPosition = CollectionPosition(collectionView, entries: entries, lead: lead)
+        thumbnailRefresh?.cancel()
+        thumbnailRefresh = nil
+        matches = [:]
+        entries = []
+        indexByKey = [:]
+        lead = nil
+        anchor = nil
+        hasPartialListing = false
+        collectionView.reloadData()
+    }
+
+    private var hasPartialListing = false
+
     /// Shows `entries` in the given order. `matches` holds fuzzy-match character offsets per URL for highlighting.
     /// Selection is kept for items that are still present.
-    private var hasPartialListing = false
     func setEntries(_ entries: [FileEntry], matches: [URL: [Int]] = [:], incremental: Bool = false) {
         loadViewIfNeeded()
         // A refresh while renaming would reload under the field; apply it once the rename ends.
@@ -136,10 +152,9 @@ final class GridViewController: NSViewController, FileItemCollection, FileCollec
             deferredEntries = (entries, matches)
             return
         }
-        let selection = Set(selectedURLs)
-        let viewport = opensAtTop ? nil : CollectionViewport.capture(collectionView, entries: self.entries)
-        let leadURL = lead.flatMap { $0 < self.entries.count ? self.entries[$0].url : nil }
-        let insertions = incremental && !opensAtTop ? FileInsertions.plan(from: self.entries, to: entries) : nil
+        let position = savedPosition ?? CollectionPosition(collectionView, entries: self.entries, lead: lead)
+        let insertions = incremental && savedPosition == nil && !opensAtTop ? FileInsertions.plan(from: self.entries, to: entries) : nil
+        savedPosition = nil
         self.entries = entries
         self.matches = Dictionary(matches.map { ($0.key.fileViewKey, $0.value) }, uniquingKeysWith: { a, _ in a })
         indexByKey.removeAll(keepingCapacity: true)
@@ -147,17 +162,18 @@ final class GridViewController: NSViewController, FileItemCollection, FileCollec
         if let insertions {
             collectionView.insertItems(at: Set(insertions.map { IndexPath(item: $0, section: 0) }))
         } else { collectionView.reloadData() }
+        let restoreViewport = !opensAtTop
         if opensAtTop {
             opensAtTop = false
             let clip = scrollView.contentView
             clip.scroll(to: NSPoint(x: 0, y: -clip.contentInsets.top))
             scrollView.reflectScrolledClipView(clip)
         }
-        let kept = selection.compactMap { indexByKey[$0.fileViewKey] }
+        let kept = position.selection.compactMap { indexByKey[$0.fileViewKey] }
         collectionView.selectionIndexPaths = Set(kept.map { IndexPath(item: $0, section: 0) })
-        lead = leadURL.flatMap { indexByKey[$0.fileViewKey] } ?? kept.min()
+        lead = position.lead.flatMap { indexByKey[$0.fileViewKey] } ?? kept.min()
         anchor = lead
-        viewport?.restore(in: collectionView) { indexByKey[$0] }
+        if restoreViewport { position.viewport?.restore(in: collectionView) { indexByKey[$0] } }
         reportSelection()
     }
 
@@ -263,9 +279,7 @@ final class GridViewController: NSViewController, FileItemCollection, FileCollec
         guard entries.indices.contains(index) else { return }
         let entry = entries[index]
         item.emphasis = { [weak self] in self?.collectionView.isEmphasized ?? false }
-        let git = statuses.git
-        let dimmed = entry.isHidden || clipboard.isCut(entry.url) || git.isIgnored(entry.url)
-        let badge = git.badge(for: entry.url, isDirectory: entry.isDirectory)
+        let dimmed = entry.isHidden || clipboard.isCut(entry.url)
         let tags = statuses.tags.tags(for: entry.url)
         let cloud = statuses.cloud.status(for: entry.url)
         let context = details?.text(for: entry)
@@ -273,12 +287,11 @@ final class GridViewController: NSViewController, FileItemCollection, FileCollec
         let detail = context ?? (showsItemInfo ? folderSizeText?(entry) : nil)
         if refreshImage {
             item.configure(entry, matches: matches[entry.url.fileViewKey] ?? [], metrics: layout.metrics, showsInfo: showsInfo,
-                           dimmed: dimmed, scale: view.window?.backingScaleFactor ?? 2, git: badge, tags: tags, cloud: cloud,
+                           dimmed: dimmed, scale: view.window?.backingScaleFactor ?? 2, tags: tags, cloud: cloud,
                            detailOverride: detail, preferences: preferences,
                            thumbnails: thumbnails, itemInfo: itemInfo)
         } else {
             item.dimmed = dimmed
-            item.itemView.gitBadge.badge = badge
             item.itemView.cloudBadge.status = cloud
             item.itemView.setTags(tags)
             item.itemView.configure(name: entry.displayName, matches: matches[entry.url.fileViewKey] ?? [],
@@ -297,9 +310,7 @@ final class GridViewController: NSViewController, FileItemCollection, FileCollec
                 configure(item, at: path.item)
             } else {
                 if let entry = item.entry {
-                    let git = statuses.git
-                    item.dimmed = entry.isHidden || clipboard.isCut(entry.url) || git.isIgnored(entry.url)
-                    item.itemView.gitBadge.badge = git.badge(for: entry.url, isDirectory: entry.isDirectory)
+                    item.dimmed = entry.isHidden || clipboard.isCut(entry.url)
                 }
                 item.updateState()
             }
@@ -530,7 +541,7 @@ extension GridViewController: NSCollectionViewDataSource, NSCollectionViewDelega
 
 // MARK: - Collection view
 
-/// Routes keys like the list does (typing filters, Space previews, Return renames) and adds double-click,
+/// Routes keys like the list does (typing filters, Space previews, Return opens or renames) and adds double-click,
 /// context-menu selection and focus-aware highlighting.
 final class GridCollectionView: FileCollectionView {
     enum Direction { case left, right, up, down, home, end }

@@ -99,7 +99,6 @@ import Testing
     var isInContainerCopy = false
     var effectiveMode = BrowserViewMode.list
     var selectedEntries: [FileEntry] = []
-    var selectedApps: [URL] = []
     var selectedArchives: [URL] = []
     var selectedContainers: [ContainerInfo] = []
     var clipboardHasFiles = false
@@ -111,7 +110,6 @@ import Testing
     var renameTitle = "Rename"
     var compressTitle = "Compress"
     var extractTitle = "Extract"
-    var appUpdatesTitle = ""
 
     init(isShowingTrash: Bool = false, isInsideArchive: Bool = false, selectedEntries: [FileEntry] = [],
          clipboardHasFiles: Bool = false, canTagSelection: Bool = false) {

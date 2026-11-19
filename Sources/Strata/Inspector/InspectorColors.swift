@@ -1,6 +1,6 @@
 import AppKit
 
-/// Attributed Git counts and script labels retain these colors, so recoloring never rebuilds their cards.
+/// Attributed project and script labels retain these colors, so recoloring never rebuilds their cards.
 nonisolated enum InspectorColors {
     static let primary = color(native: .labelColor, light: 0.92, dark: 1)
     static let secondary = color(native: .secondaryLabelColor, light: 0.75, dark: 0.98)
@@ -10,7 +10,6 @@ nonisolated enum InspectorColors {
     static let success = semantic(.systemGreen)
     static let link = semantic(.linkColor)
     static let accent = semantic(.controlAccentColor)
-    @MainActor static let conflict = semantic(GitColors.conflicted)
 
     static func update(options: ColorThemeOptions, tinted: Bool) {
         ThemeStyle.inspectorState.withLock { $0 = (options, tinted) }

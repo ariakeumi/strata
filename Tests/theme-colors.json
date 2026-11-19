@@ -84,24 +84,6 @@
     "reason": "The active inline rename editor keeps the native text-field editing background and text colors."
   },
   {
-    "file": "Sources/Strata/Dev/GitStatusBadge.swift",
-    "code": "(selected ? NSColor.white : color).setFill()",
-    "count": 1,
-    "reason": "A small status glyph uses a neutral halo and white details for contrast against semantic Git colors."
-  },
-  {
-    "file": "Sources/Strata/Dev/GitStatusBadge.swift",
-    "code": "NSColor.white.withAlphaComponent(solid ? 0.9 : 0.24).setFill()",
-    "count": 1,
-    "reason": "A small status glyph uses a neutral halo and white details for contrast against semantic Git colors."
-  },
-  {
-    "file": "Sources/Strata/Dev/GitStatusBadge.swift",
-    "code": "NSColor.windowBackgroundColor.setFill()",
-    "count": 1,
-    "reason": "A small status glyph uses a neutral halo and white details for contrast against semantic Git colors."
-  },
-  {
     "file": "Sources/Strata/Inspector/InspectorViewController.swift",
     "code": "richBackdrop.borderColor = .separatorColor",
     "count": 1,
@@ -124,24 +106,6 @@
     "code": "if rowIndex == 0 { cell.backgroundColor = MarkdownColors.tableHeader }",
     "count": 1,
     "reason": "Document table headings and rules are rendered Markdown content, separate from the themed preview surface."
-  },
-  {
-    "file": "Sources/Strata/Settings/AppearanceSettings.swift",
-    "code": ".background(Color(nsColor: .windowBackgroundColor).overlay(chrome))",
-    "count": 1,
-    "reason": "Preset cards deliberately render a native System baseline beneath each palette sample."
-  },
-  {
-    "file": "Sources/Strata/Settings/AppearanceSettings.swift",
-    "code": ".background(Color(nsColor: .windowBackgroundColor).overlay(inspector))",
-    "count": 1,
-    "reason": "Preset cards deliberately render a native System baseline beneath each palette sample."
-  },
-  {
-    "file": "Sources/Strata/Settings/AppearanceSettings.swift",
-    "code": ".background(Color(nsColor: .windowBackgroundColor).overlay(sidebar))",
-    "count": 1,
-    "reason": "Preset cards deliberately render a native System baseline beneath each palette sample."
   },
   {
     "file": "Sources/Strata/Toolbar/PathBar.swift",

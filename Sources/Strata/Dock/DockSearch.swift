@@ -46,11 +46,11 @@ final class DockSearch: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NS
         super.init()
         build()
         ranker.lateItems = { query in
-            async let found = DockSearchItems.lateItems(query)
-            let rows = await PaletteItem.lookupRows(for: query, in: BrowserServices.shared.places) { url, _ in
+            let paths = await PaletteItem.lookupRows(for: query, in: BrowserServices.shared.places) { url, _ in
                 DockSearchItems.show(url)
             }
-            return rows + (await found)
+            guard !Task.isCancelled, let search = DockSearchItems.searchCommand(for: query) else { return paths }
+            return paths + [search]
         }
         ranker.goToPath = { url in DockSearchItems.show(url) }
         ranker.emptyResults = { source in
@@ -59,7 +59,7 @@ final class DockSearch: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NS
             return workspaces + folders
         }
         ranker.lateArrived = { [weak self] keeping in self?.showResults(keeping: keeping) }
-        // Index and documents only once typing pauses; names (folders, apps, commands) as you type.
+        // Path lookups only once typing pauses.
         ranker.lateDelay = .milliseconds(180)
         ranker.selectedIdentity = { [weak self] in
             guard let self, ranker.results.indices.contains(table.selectedRow) else { return nil }
@@ -419,9 +419,7 @@ final class DockSearchPanel: NSPanel {
 
 /// The Dock's search box finds what ⌘K finds without a window to act on (folders you use, places, workspaces, path
 /// lookups like `github/acme`), apps, and the commands that work from anywhere. Then, as they arrive: files and folders
-/// from the index, plain English understood ("pdfs from last week"), documents whose text matches (on this Mac), and a
-/// row that opens the whole search in a window. Folders open in Strata; files and apps open; ⌘Return shows any of them
-/// in Strata.
+/// Folders open in Strata, and ⌘Return shows an app in its folder.
 @MainActor
 enum DockSearchItems {
     static func items() -> [PaletteItem] {
@@ -500,55 +498,14 @@ enum DockSearchItems {
         ]
     }
 
-    /// Of `hits`, those not already found (`known`) that pass `filter`, each hit's item read away from the main thread.
-    @concurrent private static func unseen(_ hits: [SemanticHit], known: Set<String>, passing filter: SearchFilter?) async
-        -> [SemanticHit] {
-        hits.filter { hit in
-            !known.contains(hit.url.path) && (filter.map { filter in FileEntry(url: hit.url).map(filter.matches) ?? false } ?? true)
-        }
-    }
-
-    /// Files and folders from the index (plain English understood), documents whose text matches, and a row that opens
-    /// the whole search in a window: on top when the words were read as plain English.
-    static func lateItems(_ query: String) async -> [PaletteItem] {
-        guard query.count >= 2, !query.hasPrefix("/"), !query.hasPrefix("~"),
-              let found = await FileIndex.shared.understand(query, limit: 30), !Task.isCancelled else { return [] }
-        let folderIcon = NSWorkspace.shared.icon(for: .folder)
-        var items: [PaletteItem] = found.hits.filter { !($0.isPackage && $0.path.hasSuffix(".app")) }.map { hit in
-            let entry = FileEntry(hit: hit)
-            let isFolder = entry.isFolder
-            let matches = Fuzzy.match(query.split(separator: " ").first.map(String.init) ?? query, entry.name)?.indices ?? []
-            return PaletteItem(title: entry.name, subtitle: Format.tildePath(entry.url.deletingLastPathComponent()),
-                               icon: isFolder ? folderIcon : BrowserServices.shared.thumbnails.icon(for: entry), kind: isFolder ? .folder : .match,
-                               fixedScore: max(0, hit.score - 1000) / 2 + 8, titleMatches: matches, url: entry.url) {
-                if isFolder { show(entry.url) } else { NSWorkspace.shared.open(entry.url) }
-            }
-        }
-        // Documents whose text matches, as the window's search finds them: a plain-English reading's kinds, sizes and
-        // dates must hold for them too.
-        let plainNames = found.interpretation == nil && !IndexQuery.parse(query).hasFilters
-        if let contentQuery = found.interpretation?.contentQuery ?? (plainNames ? query : nil), contentQuery.count >= 3 {
-            var structural = found.interpretation
-            structural?.nameContains = []
-            structural?.keywords = []
-            let known = Set(found.hits.map(\.path))
-            // The costliest part (it reads meaning, not just names): not for words already typed over.
-            guard !Task.isCancelled else { return [] }
-            let hits = await Self.unseen(await SemanticIndex.shared.search(contentQuery, limit: 8), known: known,
-                                         passing: structural)
-            items += PaletteItem.contentMatches(hits) { NSWorkspace.shared.open($0) }
-        }
-        let summary = found.interpretation?.summary
-        let magnifier = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 15, weight: .regular)) ?? NSImage()
-        let count = String(localized: "\(found.total) results everywhere", comment: "plural")
-        items.append(PaletteItem(title: String(localized: "Search for “\(query)”", comment: "The search box in the Dock: opens the search in a window"),
-                                 subtitle: summary.map { "\($0) · \(count)" } ?? count, icon: magnifier, kind: .action,
-                                 fixedScore: summary == nil ? 4 : 900) {
+    static func searchCommand(for query: String) -> PaletteItem? {
+        guard !query.isEmpty, !query.hasPrefix("/"), !query.hasPrefix("~") else { return nil }
+        let command = StrataCommand.focusSearch
+        return PaletteItem(title: String(localized: "Search for “\(query)”", comment: "The search box in the Dock: opens the search in a window"),
+                           subtitle: "", icon: command.image ?? NSImage(), kind: .action, fixedScore: 4) {
             NSApp.activate()
             (NSApp.delegate as? AppDelegate)?.frontController().search(query, in: nil)
-        })
-        return items
+        }
     }
 
     private static var cachedApps: (apps: [(url: URL, name: String)], until: Date)?

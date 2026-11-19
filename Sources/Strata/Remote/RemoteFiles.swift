@@ -29,7 +29,6 @@ package actor RemoteFiles {
     private let backends: @Sendable (String) async throws -> any RemoteBackend
     private let serverBackends: @Sendable (RemoteServer) async throws -> any RemoteBackend
     private let retire: @Sendable (String, any RemoteBackend) async -> Void
-    private var previews = CopyFetches()
     private var listings = CopyListings()
     package private(set) var fetches = CopyFetches()
     private var eager: [String: [UUID: Task<Void, Never>]] = [:]
@@ -182,7 +181,6 @@ package actor RemoteFiles {
 
     // MARK: - Fetching
 
-    /// Fetches `urls` that are still placeholders (opening, previewing or copying them). Throws the first problem.
     package func fetch(_ urls: [URL]) async throws {
         var fetched: [URL] = []
         for url in urls where copies.isPlaceholder(url) {
@@ -288,15 +286,11 @@ package actor RemoteFiles {
         let inside: (String) -> Bool = { $0 == top || $0.hasPrefix(top + "/") }
         let background = Array((eager.removeValue(forKey: id) ?? [:]).values)
         let fetching = fetches.tasks(under: top)
-        let previewing = previews.tasks(under: top)
-        previewing.forEach { $0.cancel() }
         background.forEach { $0.cancel() }
         fetching.forEach { $0.cancel() }
         for task in background { await task.value }
         for task in fetching { _ = try? await task.value }
         for task in listings.tasks(under: top) { _ = await task.result }
-        for task in previewing { _ = try? await task.value }
-        previews.forget(under: top)
         fetches.forget(under: top)
         listings.forget(under: top)
         modes = modes.filter { !inside($0.key) }
@@ -624,56 +618,4 @@ package nonisolated enum RemoteWriter {
         guard renameat(tempFolder, temp.lastPathComponent, folder, url.lastPathComponent) == 0 else { throw CocoaError(.fileWriteUnknown) }
         CopyWriter.restoreTimes(folder)
     }
-}
-
-extension RemoteFiles {
-    /// Metadata only: no eager files, recursive reads or swallowed listing errors in a Space preview.
-    /// A listed folder's placeholders written into its copy (up to a preview's many entries), still in the folder
-    /// chosen for them: away from the main thread.
-    @concurrent private static func place(_ entries: [ListedEntry], in real: URL, chosen: ChosenFile, path: String,
-                                          top: URL) async throws {
-        try chosen.withParent { _, _, _ in }
-        _ = try CopyWriter.apply(entries, contents: [:], to: real, containerPath: path, top: top, expected: chosen.identity)
-    }
-
-    package func previewFolder(_ folder: URL) async throws {
-        try Task.checkCancellation()
-        let real = await RealPath.of(folder).lexicallyStandardized
-        if real == copies.root.lexicallyStandardized { return }
-        guard let (server, top) = copies.server(containing: real), let path = RemoteCopies.remotePath(of: real, top: top),
-              !closing.contains(server.id) else { throw CancellationError() }
-        let chosen = try await ChosenFile.choose(real)
-        let key = real.path
-        let request = previews.request(key) {
-            Task {
-                var acquired: (any RemoteBackend)?
-                do {
-                    try self.ensureCurrent(server, top: top)
-                    let backend = try await self.serverBackends(server)
-                    acquired = backend
-                    let entries = try await backend.list(path)
-                    try Task.checkCancellation()
-                    try self.ensureCurrent(server, top: top)
-                    guard entries.count <= CopyProviders.previewEntryLimit else { throw CocoaError(.fileReadTooLarge) }
-                    try await Self.place(entries, in: real, chosen: chosen, path: path, top: top)
-                    if self.modes.count > 200_000 { self.modes.removeAll() }
-                    for entry in entries where entry.kind == .file && ContainerCopies.isSafeName(entry.name) {
-                        self.modes[real.appendingPathComponent(entry.name).path] = entry.mode
-                    }
-                } catch {
-                    if case SFTPError.stoppedAnswering = error, let acquired { await self.retire(server.id, acquired) }
-                    throw error
-                }
-            }
-        }
-        defer { previews.finish(request) }
-        try await withTaskCancellationHandler {
-            try await request.task.value
-            try Task.checkCancellation()
-        } onCancel: {
-            Task { await self.cancelPreview(request) }
-        }
-    }
-
-    private func cancelPreview(_ request: CopyFetches.Request) { previews.cancel(request) }
 }

@@ -10,17 +10,28 @@ extension Notification.Name {
     /// A list column was shown or hidden (right-click the column titles): every list follows.
     package static let listColumnsChanged = Notification.Name("StrataListColumnsChanged")
     package static let viewOptionsChanged = Notification.Name("StrataViewOptionsChanged")
-    package static let previewOptionsChanged = Notification.Name("StrataPreviewOptionsChanged")
-    /// A sidebar section was hidden or shown: every window's sidebar follows.
+    /// A sidebar section was collapsed or expanded: every window's sidebar follows.
     package static let sidebarSectionsCollapsed = Notification.Name("StrataSidebarSectionsCollapsed")
-    /// The folders excluded from the file index changed (Settings ▸ Search & Index); posted by the preferences that changed.
-    package static let indexExclusionsChanged = Notification.Name("StrataIndexExclusionsChanged")
-    package static let indexSwitched = Notification.Name("StrataIndexSwitched")
+    package static let sidebarVisibilityChanged = Notification.Name("StrataSidebarVisibilityChanged")
+    package static let sidebarGroupsChanged = Notification.Name("StrataSidebarGroupsChanged")
+    package static let sidebarSectionOrderChanged = Notification.Name("StrataSidebarSectionOrderChanged")
 }
 
 /// Typed app settings. Production shares one instance; independent environments supply their own defaults and
 /// notification center, so changing a fixture never reloads another environment's views.
 package final class Prefs: PreviewTextSettings {
+    package struct SidebarGroup: Codable, Equatable {
+        package let id: UUID
+        package var name: String
+        package var folderPaths: [String]
+
+        package init(name: String) {
+            self.id = UUID()
+            self.name = name
+            self.folderPaths = []
+        }
+    }
+
     private static var selected: Prefs?
     /// A test process keeps its settings here, in a folder of its own, not in ~/Library/Preferences: the system can
     /// write a test suite's file back after its process exits, and only a temporary folder can take those late writes.
@@ -76,12 +87,7 @@ package final class Prefs: PreviewTextSettings {
         static let customWindowFolder = "customWindowFolder"
         static let viewMode = "viewMode"
         static let gridIconSize = "gridIconSize"
-        static let previewViewMode = "previewViewMode"
-        static let previewIconSize = "previewIconSize"
         static let previewWrapLines = "previewWrapLines"
-        static let previewWindowSize = "previewWindowSize"
-        static let previewBrowserFraction = "previewBrowserFraction"
-        static let previewColumnWidths = "previewColumnWidths"
         static let verifyCopies = "verifyCopies"
         static let favoritePaths = "favoritePaths"
         static let reopenWindows = "reopenWindows"
@@ -101,10 +107,12 @@ package final class Prefs: PreviewTextSettings {
         static let knownListColumns = "knownListColumns"
         static let dockSearch = "dockSearch"
         static let collapsedSidebarSections = "collapsedSidebarSections"
+        static let hiddenSidebarSections = "hiddenSidebarSections"
+        static let sidebarGroups = "sidebarGroups"
+        static let sidebarSectionOrder = "sidebarSectionOrder"
+        static let sidebarHidesRecents = "sidebarHidesRecents"
         static let newFileExtension = "newFileExtension"
         static let dualPaneAddressBars = "dualPaneAddressBars"
-        static let indexExcludedFolders = "indexExcludedFolders"
-        static let indexesFiles = "indexesFiles"
     }
 
     /// An explicit app-language override. An empty value lets macOS choose the language on the next launch.
@@ -133,34 +141,48 @@ package final class Prefs: PreviewTextSettings {
         set { defaults.set(newValue, forKey: Key.dualPaneAddressBars); notifications.post(name: .prefsChanged, object: nil) }
     }
 
-    /// Sidebar sections you've hidden (Hide on a section's title), by ID: they stay hidden until you show them again.
+    /// Sidebar sections you've collapsed, by ID, including sections currently hidden from the sidebar.
     package var collapsedSidebarSections: Set<String> {
         get { Set(defaults.stringArray(forKey: Key.collapsedSidebarSections) ?? []) }
         set { defaults.set(newValue.sorted(), forKey: Key.collapsedSidebarSections) }
     }
 
-    /// Whether Strata keeps its file index (Settings ▸ Search & Index): on until you turn it off.
-    package var indexesFiles: Bool {
-        get { defaults.object(forKey: Key.indexesFiles) as? Bool ?? true }
+    package var hiddenSidebarSections: Set<String> {
+        get { Set(defaults.stringArray(forKey: Key.hiddenSidebarSections) ?? []) }
         set {
-            guard newValue != indexesFiles else { return }
-            defaults.set(newValue, forKey: Key.indexesFiles)
-            notifications.post(name: .indexSwitched, object: self)
+            guard newValue != hiddenSidebarSections else { return }
+            defaults.set(newValue.sorted(), forKey: Key.hiddenSidebarSections)
+            notifications.post(name: .sidebarVisibilityChanged, object: self)
         }
     }
 
-    /// The folders you excluded from the file index (Settings ▸ Search & Index), by their real paths: at most
-    /// `IndexExclusions.limit`, of which the saved value's first that many entries are read.
-    package var indexExcludedFolders: [String] {
+    package var sidebarHidesRecents: Bool {
+        get { defaults.bool(forKey: Key.sidebarHidesRecents) }
+        set {
+            guard newValue != sidebarHidesRecents else { return }
+            defaults.set(newValue, forKey: Key.sidebarHidesRecents)
+            notifications.post(name: .sidebarVisibilityChanged, object: self)
+        }
+    }
+
+    package var sidebarGroups: [SidebarGroup] {
         get {
-            let saved = defaults.array(forKey: Key.indexExcludedFolders) ?? []
-            return IndexExclusions.listed(saved.prefix(IndexExclusions.limit).compactMap { $0 as? String })
+            guard let data = defaults.data(forKey: Key.sidebarGroups) else { return [] }
+            return (try? PropertyListDecoder().decode([SidebarGroup].self, from: data)) ?? []
         }
         set {
-            let folders = IndexExclusions.listed(newValue)
-            guard folders != indexExcludedFolders else { return }
-            defaults.set(folders, forKey: Key.indexExcludedFolders)
-            notifications.post(name: .indexExclusionsChanged, object: self)
+            guard newValue != sidebarGroups, let data = try? PropertyListEncoder().encode(newValue) else { return }
+            defaults.set(data, forKey: Key.sidebarGroups)
+            notifications.post(name: .sidebarGroupsChanged, object: self)
+        }
+    }
+
+    package var sidebarSectionOrder: [String] {
+        get { defaults.stringArray(forKey: Key.sidebarSectionOrder) ?? [] }
+        set {
+            guard newValue != sidebarSectionOrder else { return }
+            defaults.set(newValue, forKey: Key.sidebarSectionOrder)
+            notifications.post(name: .sidebarSectionOrderChanged, object: self)
         }
     }
 
@@ -180,7 +202,7 @@ package final class Prefs: PreviewTextSettings {
 
     /// Return opens the selection instead of renaming it (Finder renames).
     package var returnOpens: Bool {
-        get { defaults.bool(forKey: Key.returnOpens) }
+        get { defaults.object(forKey: Key.returnOpens) as? Bool ?? true }
         set { defaults.set(newValue, forKey: Key.returnOpens) }
     }
 
@@ -214,59 +236,6 @@ package final class Prefs: PreviewTextSettings {
             defaults.set(newValue, forKey: Key.previewWrapLines)
             if changed { notifications.post(name: .previewWrappingChanged, object: self) }
         }
-    }
-
-    package var previewViewMode: PreviewViewMode {
-        get { PreviewViewMode(rawValue: defaults.integer(forKey: Key.previewViewMode)) ?? .list }
-        set {
-            defaults.set(newValue.rawValue, forKey: Key.previewViewMode)
-            notifications.post(name: .previewOptionsChanged, object: nil)
-        }
-    }
-
-    package var previewIconSize: Double {
-        get {
-            let value = defaults.object(forKey: Key.previewIconSize) as? Double ?? 80
-            return value.isFinite ? min(max(value, 32), 256) : 80
-        }
-        set {
-            defaults.set(newValue.isFinite ? min(max(newValue, 32), 256) : 80, forKey: Key.previewIconSize)
-            notifications.post(name: .previewOptionsChanged, object: nil)
-        }
-    }
-
-    package var previewWindowSize: NSSize? {
-        get {
-            guard let values = defaults.array(forKey: Key.previewWindowSize) as? [Double], values.count == 2 else { return nil }
-            let size = NSSize(width: values[0], height: values[1])
-            return PreviewLayout.validSize(size) ? size : nil
-        }
-        set {
-            if let size = newValue, PreviewLayout.validSize(size) {
-                defaults.set([size.width, size.height], forKey: Key.previewWindowSize)
-            } else { defaults.removeObject(forKey: Key.previewWindowSize) }
-        }
-    }
-
-    package var previewBrowserFraction: CGFloat {
-        get {
-            let value = defaults.object(forKey: Key.previewBrowserFraction) as? Double ?? PreviewLayout.defaultBrowserFraction
-            return value.isFinite && value > 0 && value < 1 ? value : PreviewLayout.defaultBrowserFraction
-        }
-        set {
-            guard newValue.isFinite, newValue > 0, newValue < 1 else { return }
-            defaults.set(newValue, forKey: Key.previewBrowserFraction)
-        }
-    }
-
-    package var previewColumnWidths: [String: Double] {
-        get {
-            (defaults.dictionary(forKey: Key.previewColumnWidths) ?? [:]).compactMapValues {
-                guard let value = $0 as? Double, value.isFinite, (64...320).contains(value) else { return nil }
-                return value
-            }
-        }
-        set { defaults.set(newValue.filter { $0.value.isFinite && (64...320).contains($0.value) }, forKey: Key.previewColumnWidths) }
     }
 
     package var iconViewOptions: IconViewOptions {

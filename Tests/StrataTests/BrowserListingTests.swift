@@ -117,24 +117,6 @@ struct BrowserListingTests {
         #expect(browser.selectedURLs == [b.url])
     }
 
-    @Test func groupsIndexTheirFilesInsteadOfTheirHeaders() throws {
-        let listing = BrowserListing()
-        let a = entry("x/same.txt"), b = entry("y/same.txt")
-        listing.replaceGroups([(title: "Empty", detail: "", entries: []),
-                               (title: "Duplicates", detail: "2 copies", entries: [a, b])])
-        let header = try #require(listing.nodes.first)
-        #expect(listing.nodes.count == 1)
-        #expect(header.groupTitle == "Duplicates" && header.groupDetail == "2 copies")
-        let aNode = try #require(listing.node(for: a.url))
-        #expect(aNode !== header && aNode.parent === header)
-        #expect(listing.node(for: b.url)?.parent === header)
-        #expect(listing.updateResults([a], sorted: false) == nil)
-        listing.replace([b], preservingNodes: false, sort: { _ in })
-        #expect(listing.node(for: a.url) == nil)
-        #expect(listing.node(for: b.url)?.parent == nil)
-        #expect(listing.nodes.first?.groupTitle == nil)
-    }
-
     @Test func resultRefreshRetainsNativeSelectionAndResortsChangedValues() throws {
         let browser = BrowserViewController(services: testEnvironment.services)
         _ = browser.view

@@ -248,6 +248,53 @@ struct BrowserPresentationsTests {
         #expect(second.activeView != nil)
     }
 
+    @Test func hiddenCollectionsReleaseTheirListingAndRestoreTheirViewportAndSelection() throws {
+        let browser = BrowserViewController(services: testEnvironment.services)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 740, height: 480),
+                              styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = browser
+        browser.view.frame = NSRect(x: 0, y: 0, width: 740, height: 480)
+        defer { browser.stopBackgroundWork(); window.contentViewController = nil; window.close() }
+        let all = (0..<400).map { index in
+            let name = "folder-\(index)"
+            return FileEntry(url: URL(string: "smb://server/share/\(name)")!, name: name, isDirectory: true,
+                             isPackage: false, isHidden: false, isSymlink: false, isVolume: false,
+                             size: nil, modified: nil, created: nil, added: nil, kind: "", contentType: nil)
+        }
+        for mode in [BrowserViewMode.grid, .gallery] {
+            browser.showResults(all, total: all.count)
+            browser.setMode(mode, remember: false)
+            let presentation = try #require(browser.activeView as? FileItemCollection)
+            let collection = try #require(presentation.focusView as? NSCollectionView)
+            let scroll = try #require(collection.enclosingScrollView)
+            let selected = [all[1].url, all[3].url]
+            browser.select(selected, scroll: false)
+            browser.view.layoutSubtreeIfNeeded()
+            let clip = scroll.contentView
+            let offset = mode == .grid ? NSPoint(x: 0, y: 700) : NSPoint(x: 750, y: 0)
+            clip.scroll(to: offset)
+            scroll.reflectScrolledClipView(clip)
+            browser.view.layoutSubtreeIfNeeded()
+            let viewport = clip.bounds.origin
+            try #require(mode == .grid ? viewport.y > 500 : viewport.x > 500, "\(mode), origin \(viewport), collection \(collection.bounds), clip \(clip.bounds)")
+            browser.setMode(.list, remember: false)
+            #expect(presentation.entries.isEmpty)
+            #expect(presentation.index(of: all[3].url) == nil)
+            browser.setMode(mode, remember: false)
+            browser.view.layoutSubtreeIfNeeded()
+            #expect(presentation.selectedURLs == selected)
+            #expect(clip.bounds.origin == viewport, "\(mode)")
+            browser.setMode(.list, remember: false)
+            let replacement = all[37]
+            browser.showResults([replacement], total: 1)
+            browser.setMode(mode, remember: false)
+            #expect(presentation.entries == [replacement])
+            #expect(presentation.selectedURLs == (mode == .gallery ? [replacement.url] : []))
+            browser.setMode(.list, remember: false)
+        }
+    }
+
     @Test func cachedPresentationsAndTheirMetadataDoNotRetainTheBrowser() async throws {
         let tree = try TestTree("a.txt", "b.txt")
         let entries = try entries(tree, ["a.txt", "b.txt"])

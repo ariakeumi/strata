@@ -3,6 +3,7 @@ import Darwin
 import Testing
 @testable import Strata
 @testable import StrataModel
+@testable import StrataFiles
 
 /// Opt-in measurements, separate from correctness tests and without touching an installed app.
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["STRATA_BROWSER_BENCHMARK"] == "1"))
@@ -43,6 +44,35 @@ import Testing
         let lowPowerMode: Bool
         let entries: Int
         let milliseconds: [Double]
+    }
+
+    @Test func measureHiddenListing() async throws {
+        let environment = try IndependentEnvironment()
+        let browser = BrowserViewController(services: environment.services)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
+            styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = browser
+        defer { browser.stopBackgroundWork(); window.contentViewController = nil; window.close() }
+        func show(_ count: Int) {
+            let entries = (0..<count).map { index in
+                let name = "example-\(index)"
+                return FileEntry(url: URL(string: "smb://example/share/\(name)")!, name: name, isDirectory: true,
+                    isPackage: false, isHidden: false, isSymlink: false, isVolume: false, size: nil,
+                    modified: nil, created: nil, added: nil, kind: "", contentType: nil)
+            }
+            browser.showResults(entries, total: entries.count)
+        }
+        autoreleasepool {
+            show(100_000)
+            for mode in [BrowserViewMode.grid, .gallery, .list] {
+                browser.setMode(mode, remember: false)
+                browser.view.layoutSubtreeIfNeeded()
+            }
+            show(1)
+        }
+        try await Task.sleep(for: .milliseconds(500))
+        print("Hidden listing footprint: \(try Self.footprint()) bytes, Icons: \(browser.grid.entries.count) entries, Gallery: \(browser.gallery.entries.count) entries")
     }
 
     @Test func measureNativeMetadataReordering() async throws {

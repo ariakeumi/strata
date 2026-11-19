@@ -143,8 +143,9 @@ nonisolated struct VolumeSpace: Sendable, Equatable {
         hasPartialListing = !complete
     }
 
-    func showResults(loaded: Bool = true) {
+    func showResults(loaded: Bool = true, forgetDirectory: Bool = false) {
         invalidate()
+        if forgetDirectory { directory = nil }
         isLoadingFolder = false
         error = nil
         isLoaded = loaded

@@ -4,16 +4,14 @@ import Testing
 
 /// What a pane says about results, and the list columns it lends them and gives back.
 @MainActor struct PaneResultsTests {
-    @Test func aCappedSearchSaysSoAndASummaryIsSaidInsteadOfACount() {
+    @Test func aCappedSearchSaysSoAndMessagesOmitTheCount() {
         let results = PaneResults()
-        results.tally = .matched(5)
+        results.total = 5
         let all = results.status(shown: 5)
-        results.tally = .matched(10)
+        results.total = 10
         let capped = results.status(shown: 5)
         #expect(all.count == 1 && capped.count == 1 && all != capped && capped[0].contains("10"))
-        results.tally = .summary("3 sets of duplicates")
-        #expect(results.status(shown: 9) == ["3 sets of duplicates"])
-        results.tally = .summary("")
+        results.total = nil
         #expect(results.status(shown: 9).isEmpty)
     }
 

@@ -10,7 +10,7 @@
  {
   "file": "Sources/Strata/Browser/BrowserServices.swift",
   "instance": "*",
-  "count": 11,
+  "count": 8,
   "reason": "BrowserServices.application() composes the app's services from the app's queue, visits, servers, containers, clipboard, stores and indexes (a function: the initializer's concurrent defaults can't be read in a static's)."
  },
  {
@@ -34,12 +34,6 @@
   "instance": "ShelfPanel.shared",
   "count": 1,
   "reason": "Add to Shelf: the Shelf is the app's one panel, shared by every window."
- },
- {
-  "file": "Sources/Strata/Browser/BrowserViewController+AppUpdates.swift",
-  "instance": "Updates.shared",
-  "count": 2,
-  "reason": "Updating Strata itself is the app's: opening this copy of Strata from a window checks with the app's updater."
  },
  {
   "file": "Sources/Strata/Views/ContainerDrag.swift",
@@ -99,7 +93,7 @@
   "file": "Sources/Strata/Archives/ArchiveReader.swift",
   "instance": "allowance: .shared",
   "count": 1,
-  "reason": "Archive workers are the Mac's to spend: Space previews in every window share two at a time (ArchiveReadAllowance)."
+  "reason": "Archive workers are the Mac's to spend: format-specific previews in every window share two at a time (ArchiveReadAllowance)."
  },
  {
   "file": "Sources/Strata/Sidebar/SidebarViewController.swift",
@@ -124,12 +118,6 @@
   "instance": "RemoteCopyStore.shared",
   "count": 1,
   "reason": "ReadOnlyCopies: refusing a change inside a copy Strata keeps is never wrong, so every window refuses changes in the app's own copies too, not only in its environment's."
- },
- {
-  "file": "Sources/Strata/AI/AIIntegration.swift",
-  "instance": "SemanticIndex.shared",
-  "count": 2,
-  "reason": "Indexing the contents of your Documents, Desktop and Downloads is the app's, started at launch and from Settings; windows search their own environment's content index."
  },
  {
   "file": "Sources/Strata/Model/ArchiveCache.swift",

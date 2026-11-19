@@ -26,7 +26,7 @@ final class CloudBadge: NSImageView, ColorThemeUpdating {
     }
 
     /// Over an icon (Icons view) the badge sits on a small plate in the window's background color, so it reads on any
-    /// image (like the git badge).
+    /// image.
     var drawsBacking = false {
         didSet { needsDisplay = true }
     }

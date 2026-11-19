@@ -261,4 +261,63 @@ struct RemoteKeychainTests {
         #expect(fixture.items[key]?.data == Data("Fixture secret".utf8))
         backend.close()
     }
+
+    @Test func smbPasswordsStayInTheirOwnKeychainItemsAndStartupUsesTheSavedLogin() async throws {
+        let preferences = try Prefs.isolated()
+        let id = UUID()
+        func profile(host: String = "nas") throws -> SMBProfile {
+            try SMBProfile.make(id: id, name: "", address: "smb://\(host)/team", user: "amy", guest: false,
+                                remembersPassword: true, connectsAtLaunch: true)
+        }
+        let saved = try profile()
+        let s3 = Identity(account: saved.credentialAccount)
+        let other = Identity(service: "Strata SMB", account: saved.credentialAccount + "-other")
+        let chosen = Identity(service: "Strata SMB", account: saved.credentialAccount)
+        let neighbors = [s3: Item("S3 secret"), other: Item("Other SMB password")]
+        let keychain = Keychain(.init(items: neighbors))
+        let credentials = RemoteKeychain(access: keychain.access).smb
+        let calls = Mutex(0)
+        let mounter = SMBMounter { url, password, guest, interactive, _ in
+            #expect(url == URL(string: "smb://amy@nas/team"))
+            #expect(password == "Fixture password" && !guest && !interactive)
+            calls.withLock { $0 += 1 }
+            return .success(URL(filePath: "/Volumes/Fixture"))
+        }
+        let first = SMBConnections(preferences: preferences, credentials: credentials, mounter: mounter)
+        try await first.save(saved, replacing: nil, password: "Fixture password")
+        let data = try #require(preferences.defaults.data(forKey: "smbConnections"))
+        #expect(!String(decoding: data, as: UTF8.self).contains("Fixture password"))
+        #expect(keychain.items[chosen]?.data == Data("Fixture password".utf8))
+        #expect(keychain.items.filter { $0.key != chosen } == neighbors)
+
+        let reopened = SMBConnections(preferences: preferences, credentials: credentials, mounter: mounter)
+        #expect(reopened.profiles == [saved])
+        let edited = try profile()
+        #expect(edited.revision != saved.revision)
+        try await reopened.save(edited, replacing: saved, password: "")
+        await #expect(throws: ServerConnection.Problem.self) {
+            try await reopened.save(profile(host: "other"), replacing: edited, password: "")
+        }
+        await #expect(throws: ServerConnection.Problem.self) { try await reopened.remove(saved) }
+        keychain.state.withLock { $0.updateError = errSecAuthFailed }
+        await #expect(throws: ServerConnection.Problem.self) {
+            try await reopened.save(profile(host: "other"), replacing: edited, password: "Rejected")
+        }
+        #expect(reopened.profiles == [edited])
+
+        for task in reopened.connectAtLaunch() { await task.value }
+        #expect(calls.withLock { $0 } == 1)
+        let read = try #require(keychain.calls.last { $0.operation == .read })
+        #expect(read.queryKeys.contains(kSecUseAuthenticationUI as String))
+        let moved = try profile(host: "other")
+        #expect(moved.credentialAccount != saved.credentialAccount)
+        keychain.state.withLock { $0.updateError = nil }
+        try await reopened.save(moved, replacing: edited, password: "Password for other host")
+        #expect(keychain.items[chosen] == nil)
+        #expect(keychain.items[Identity(service: "Strata SMB", account: moved.credentialAccount)]?.data
+                == Data("Password for other host".utf8))
+        try await reopened.remove(moved)
+        #expect(keychain.items == neighbors)
+        #expect(reopened.profiles.isEmpty)
+    }
 }

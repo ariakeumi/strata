@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let undoManager = UndoManager()
     private lazy var historyWindow = HistoryWindowController(history: browserServices.transfers.history,
                                                             undoManager: undoManager, frameAutosaveName: "StrataHistory")
+    private lazy var shortcutsWindow = ShortcutsWindowController(preferences: browserServices.preferences)
     private var windowControllers: [BrowserWindowController] = []
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -22,45 +23,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         RemoteCopyStore.shared.setAsideForRemoval()
         Self.raiseFileLimit()
         registerRevealHandler()
-        let preferences = browserServices.preferences, userThemes = UserThemes.shared
-        FileViewStyle.applyTheme(preferences)
-        ThemeStyle.apply(preferences.colorThemeOptions(among: userThemes), windows: [])
+        let preferences = browserServices.preferences
+        Self.applyAppearance(preferences, windows: [])
         NotificationCenter.default.addObserver(forName: .appearanceChanged, object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated {
-                FileViewStyle.applyTheme(preferences)
-                ThemeStyle.apply(preferences.colorThemeOptions(among: userThemes), windows: NSApp.windows)
-            }
+            MainActor.assumeIsolated { Self.applyAppearance(preferences, windows: NSApp.windows) }
         }
-        NotificationCenter.default.addObserver(forName: .colorThemeChanged, object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { ThemeStyle.apply(preferences.colorThemeOptions(among: userThemes), windows: NSApp.windows) }
-        }
-        // The first window is drawn in the theme as it was last known; the folder says the rest once it has been read.
-        Task { await preferences.readThemes(of: userThemes) }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
                                                           object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated {
-                FileViewStyle.applyTheme(preferences)
-                ThemeStyle.apply(preferences.colorThemeOptions(among: userThemes), windows: NSApp.windows)
-            }
-        }
-        let index = browserServices.index
-        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification,
-                                                          object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { index.saveWhenIdle() }
-        }
-        // Content matches follow the index's: with the index turned off nothing shows them, so they aren't gathered.
-        NotificationCenter.default.addObserver(forName: .indexDidSwitch, object: index, queue: nil) { _ in
-            MainActor.assumeIsolated {
-                if index.isOn { StrataAI.startIndexing() } else { StrataAI.stopIndexing() }
-            }
+            MainActor.assumeIsolated { Self.applyAppearance(preferences, windows: NSApp.windows) }
         }
         NSApp.mainMenu = MainMenu.build()
         // Your own shortcuts (Settings ▸ Shortcuts) over the built-in ones.
         if let menu = NSApp.mainMenu { ShortcutStore.shared.install(menu) }
     }
 
-    /// macOS starts apps with room for 256 open files; folder watchers (lists, columns, folder trees), the index and
-    /// copies all hold some. Raised as far as the system allows, to a sensible ceiling.
+    static func applyAppearance(_ preferences: Prefs, windows: [NSWindow]) {
+        FileViewStyle.applyTheme(preferences)
+        ThemeStyle.apply(ColorThemeOptions(), windows: windows)
+    }
+
+    /// macOS starts apps with room for 256 open files; folder watchers (lists, columns, folder trees) and
+    /// copies hold some. Raised as far as the system allows, to a sensible ceiling.
     private static func raiseFileLimit() {
         var limit = rlimit()
         guard getrlimit(RLIMIT_NOFILE, &limit) == 0 else { return }
@@ -76,21 +59,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var launching = true
     private var openedAtLaunch = false
 
-    /// Strata ▸ Check for Updates….
-    @objc func checkForUpdates(_ sender: Any?) {
-        Updates.shared.checkNow(sender)
-    }
-
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
         MainThreadWatchdog.start()
         #endif
-        // Starts Sparkle (in a release build): background checks if allowed, and Check for Updates….
-        _ = Updates.shared
-        browserServices.index.start()
         ContainerStore.shared.start()
         ProjectEditors.warm()
-        if browserServices.index.isOn { StrataAI.startIndexing() }
         // Loads history now, so a plain copy left by an earlier build is removed right away.
         _ = OperationLog.shared
         // Archives opened as folders and not looked at for a day; containers' and servers' files left by a crash.
@@ -102,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             CopyProviders.live.removeClipboardStaging()
         }
         DockSearch.shared.apply(atLaunch: true)
+        browserServices.smb.connectAtLaunch()
         Task { [weak self] in await self?.openFirstWindows() }
     }
 
@@ -242,7 +217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate()
     }
 
-    /// strata://search?q=…&in=…, strata://open?path=…, strata://workspace?name=…, strata://recents, strata://duplicates
+    /// strata://search?q=…&in=…, strata://open?path=…, strata://workspace?name=…, strata://recents
     private func handle(_ url: URL) {
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         let value = { (name: String) in items.first { $0.name == name }?.value }
@@ -287,8 +262,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         case "recents":
             controller.goRecents(nil)
-        case "duplicates":
-            controller.showDuplicates()
         case "shortcuts":
             showShortcuts(nil)
             return
@@ -352,7 +325,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         browserServices.windowSession.save()
-        browserServices.index.saveNow()
         OperationLog.waitForWrites()
         // Containers' and servers' files don't outlive Strata: removed now, as far as two seconds allow (the rest at
         // next launch). An SFTP connection's ssh ends by itself when Strata does (its input closes).
@@ -375,7 +347,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(toggleShelf(_:)) { item.state = ShelfPanel.shared.isVisible ? .on : .off }
-        if item.action == #selector(checkForUpdates(_:)) { return Updates.shared.canCheck }
         return true
     }
 
@@ -407,7 +378,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func showShortcuts(_ sender: Any?) {
-        ShortcutsWindowController.shared.show()
+        shortcutsWindow.show()
     }
 
     @objc func showSettings(_ sender: Any?) {

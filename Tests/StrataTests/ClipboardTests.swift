@@ -88,21 +88,13 @@ import Testing
         #expect(tree.snapshot() == ["left/", "left/a.txt", "right/", "right/a.txt"])
     }
 
-    @Test func copyingABranchOrACommandUsesTheWindowsOwnPasteboard() throws {
+    @Test func copyingAProjectCommandUsesTheWindowsOwnPasteboard() throws {
         let environment = try IndependentEnvironment(), clipboard = environment.services.clipboard
-        let pill = GitBranchPill(clipboard: clipboard)
-        var model = GitBranchPill.Model(branch: "feature/copies")
-        model.oid = "4f2a9c1"
-        pill.model = model
-        pill.perform(NSSelectorFromString("copyBranch"))
-        #expect(clipboard.pasteboard.string(forType: .string) == "feature/copies")
-        pill.perform(NSSelectorFromString("copyCommit"))
-        #expect(clipboard.pasteboard.string(forType: .string) == "4f2a9c1")
         let tree = try TestTree("Makefile")
-        let view = ProjectInspectorView(files: environment.services.files, git: GitStatusStore(), clipboard: clipboard)
+        let view = ProjectInspectorView(preferences: environment.preferences, clipboard: clipboard)
         view.configure(ProjectInfo(folder: tree.root, kinds: [], artifacts: [],
                                    scripts: [.init(name: "test", command: "python -m pytest", runner: .make,
-                                                   directory: tree.root, source: "Makefile")], git: nil))
+                                                   directory: tree.root, source: "Makefile")]))
         func descendants(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(descendants) }
         let row = try #require(descendants(view).first { $0.responds(to: NSSelectorFromString("copyCommand")) })
         row.perform(NSSelectorFromString("copyCommand"))

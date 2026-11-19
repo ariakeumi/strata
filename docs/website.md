@@ -1,21 +1,7 @@
 # Website checks and publishing
 
 The public site is built from `site/` and the real app screenshots in `docs/screenshots/`.
-The themes stack is composed from actual Strata windows with demo files, including native System Light.
-Its PNG is shared by the README and the website; the build creates responsive lossless WebP versions
-at 800, 1100, 1400, 2360 and the original 3960 pixels. The homepage preload and image use the same
-responsive candidates so only the appropriate size is downloaded.
-
-The Color Themes section pairs its copy with the approved Appearance settings capture, `docs/screenshots/appearance.png`.
-It shows System and the original fourteen themes in the actual settings window, with its native border, shadow and transparency.
-The portrait image is displayed at up to 632 CSS pixels; lossless WebP delivery preserves palette colors and alpha at
-480, 800, 1100 and the original 1264 pixels. The README shares the primary `appearance.webp` export.
-
-The Quick Look image uses live Strata windows with Acme Studio demo files. Native window captures retain the real
-controls, materials, borders and shadows at their screen positions; the selected Brand Assets folder stays visible
-above the preview. Its PNG master is `docs/screenshots/quicklook.png`. The README uses the matching WebP export;
-the website serves 480, 800, 1100, 1400 and 2120-pixel versions. Keep it immediately after Disk Usage in both the README
-and the homepage.
+The homepage uses the native List view capture, with matching responsive candidates for the preload and image.
 
 The Views tabs and README show all five views plus Dual Pane, captured from the same live app and Acme Studio
 demo files. Columns opens Photos → Selects → Autumn Campaign with a photo selected at the deepest level.
@@ -128,7 +114,7 @@ reciprocal SEO links, sitemap coverage, and adding a language without changing a
 The website follows the system's light or dark appearance by default, including live changes. The header's
 appearance picker offers System, Light and Dark in every language. Light and Dark overrides are remembered in
 local storage and shared across pages, languages and open tabs; System clears the override. Blocked storage still
-allows a choice for the current page. This setting is separate from the app's color themes.
+allows a choice for the current page. This setting is separate from the app's appearance setting.
 
 `appearance.js` runs before styles paint, applying a saved choice without flashing the opposite appearance.
 CSS `light-dark()` colors follow the system even without JavaScript; the picker stays hidden when it cannot work.

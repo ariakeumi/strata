@@ -71,12 +71,15 @@ struct ToolbarCustomizationTests {
         let toolbar = try #require(first.window?.toolbar)
         #expect(toolbar.allowsUserCustomization && !toolbar.autosavesConfiguration)
         #expect(first.toolbarDefaultItemIdentifiers(toolbar) == BrowserToolbar.defaults)
-        #expect(BrowserToolbar.defaults.count == 15)
+        let removedSidebarMode = NSToolbarItem.Identifier("sidebarMode")
+        #expect(!toolbar.itemIdentifiers.contains(removedSidebarMode))
+        #expect(!first.toolbarAllowedItemIdentifiers(toolbar).contains(removedSidebarMode))
+        #expect(!first.toolbarAllowedItemIdentifiers(toolbar).contains(.toggleSidebar))
         let reload = BrowserToolbar.identifier(.reloadFolder)
         #expect(!BrowserToolbar.defaults.contains(reload))
         #expect(BrowserToolbar.allowed.filter { $0 == reload }.count == 1)
         for command in BrowserToolbar.commands { #expect(first.toolbarAllowedItemIdentifiers(toolbar).contains(BrowserToolbar.identifier(command))) }
-        let ids: [NSToolbarItem.Identifier] = [.toggleSidebar, BrowserToolbar.identifier(.newFolder), .flexibleSpace, .pathBar]
+        let ids: [NSToolbarItem.Identifier] = [.back, BrowserToolbar.identifier(.newFolder), .flexibleSpace, .pathBar]
         toolbar.itemIdentifiers = ids
         toolbar.displayMode = .iconAndLabel
         #expect(environment.preferences.toolbarItems == ids.map(\.rawValue))

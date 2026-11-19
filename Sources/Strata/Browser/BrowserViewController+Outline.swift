@@ -1,6 +1,4 @@
 import AppKit
-import Quartz
-import StrataIndex
 import StrataModel
 import StrataTheme
 
@@ -35,7 +33,6 @@ extension BrowserViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
 
     func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
         guard let node = item as? FileNode else { return false }
-        if node.groupTitle != nil { return true }
         guard filter.isEmpty, !isShowingResults else { return false }
         return node.entry.isFolder
     }
@@ -46,19 +43,9 @@ extension BrowserViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
 
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
         guard let node = item as? FileNode else { return nil }
-        if let title = node.groupTitle {
-            let cell = outlineView.makeView(withIdentifier: .groupCell, owner: nil) as? GroupHeaderCellView ?? {
-                let cell = GroupHeaderCellView()
-                cell.identifier = .groupCell
-                return cell
-            }()
-            cell.configure(title: title, detail: node.groupDetail ?? "", icon: services.thumbnails.icon(for: node.entry))
-            return cell
-        }
         guard let column = tableColumn else { return nil }
         let entry = node.entry
-        let git = services.git
-        let dimmed = entry.isHidden || services.clipboard.isCut(entry.url) || git.isIgnored(entry.url)
+        let dimmed = entry.isHidden || services.clipboard.isCut(entry.url)
         if column.identifier == .name {
             let cell = outlineView.makeView(withIdentifier: .nameCell, owner: nil) as? NameCellView ?? {
                 let cell = NameCellView()
@@ -66,7 +53,7 @@ extension BrowserViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
                 return cell
             }()
             cell.configure(name: entry.listName(showingExtension: preferences.showListNameExtensions), icon: services.thumbnails.icon(for: entry), matches: node.matchIndices, dimmed: dimmed,
-                           git: git.badge(for: entry.url, isDirectory: entry.isDirectory), tags: services.tags.tags(for: entry.url),
+                           tags: services.tags.tags(for: entry.url),
                            cloud: services.cloud.status(for: entry.url), thumbnail: preferences.showIconPreviews ? entry : nil,
                            thumbnails: services.thumbnails, scale: outlineView.window?.backingScaleFactor ?? 2,
                            typography: listTypography)
@@ -112,40 +99,23 @@ extension BrowserViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         return "…"
     }
 
-    /// Symlinks and volumes aren't walked, and neither are guarded folders that would trigger a consent prompt, nor
-    /// folders that hold one: the index sizes those without opening it, a walk could not.
+    /// Only walk local folders whose access is already available.
     func canMeasure(_ entry: FileEntry) -> Bool {
         guard entry.isDirectory, !entry.isSymlink, !entry.isVolume, !services.copies.contains(entry.url), let directory else { return false }
-        if !Privacy.measuringWouldPrompt(entry.url, browsing: directory), !Privacy.walkingWouldReachGuardedFolders(entry.url) {
-            return true
-        }
-        return services.index.folderSizeLookup(entry.url) != .unindexed || FolderSizer.cached(entry.url) != nil
+        return FolderSizer.cached(entry.url) != nil
+            || (!Privacy.measuringWouldPrompt(entry.url, browsing: directory) && !Privacy.walkingWouldReachGuardedFolders(entry.url))
     }
 
-    /// Whether views show a size for `entry` without being asked: a folder you excluded from the index shows none and
-    /// isn't walked, since it can hold millions of items, until you ask (Inspector, Calculate Size). Nor does any folder
-    /// the index would cover while it is turned off. Nor one its cloud badge says is only in the cloud, unless its
-    /// size is known already: nothing of it is on the Mac for a walk to measure.
+    /// A folder whose badge says it is only in the cloud is left for an explicit measurement.
     func showsSize(_ entry: FileEntry) -> Bool {
-        canMeasure(entry) && !services.index.leavesSizeUntilAsked(entry.url)
+        canMeasure(entry)
             && (services.cloud.status(for: entry.url)?.isPlaceholder != true || folderSize(entry.url) != nil)
-    }
-
-    func outlineView(_ outlineView: NSOutlineView, isGroupItem item: Any) -> Bool {
-        (item as? FileNode)?.groupTitle != nil
-    }
-
-    func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
-        (item as? FileNode)?.groupTitle == nil
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
         if !isApplyingListing, loading.hasPartialListing || filtering.matching != nil { pending.cancel() }
         delegate?.browserSelectionDidChange(self)
         prefetchSelection()
-        if QLPreviewPanel.sharedPreviewPanelExists(), let panel = QLPreviewPanel.shared(), panel.isVisible {
-            panel.reloadData()
-        }
     }
 
     func outlineView(_ outlineView: NSOutlineView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
@@ -156,7 +126,7 @@ extension BrowserViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
     }
 
     func applySort(_ key: SortKey, ascending direction: Bool, remember: Bool = true) {
-        if key == .tags, isShowingResults { services.tags.load(nodes.flatMap { $0.children ?? [$0] }.map(\.entry)) }
+        if key == .tags, isShowingResults, smbShares == nil { services.tags.load(nodes.flatMap { $0.children ?? [$0] }.map(\.entry)) }
         ordering.choose(.init(key: key, ascending: direction), remember: remember)
         if !remember, directory == nil, !isShowingResults { initialSort = .init(key: key, ascending: direction) }
         syncSortDescriptor()
@@ -165,7 +135,7 @@ extension BrowserViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
             else { preferences.sortColumn = key.rawValue; preferences.sortAscending = direction }
             folderOptions?.refresh()
         }
-        let selection = selectedURLs
+        let selection = presentationSelection.map(\.url)
         listing.sort(using: sort)
         outlineView.reloadData()
         pushContent()

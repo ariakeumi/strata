@@ -37,12 +37,12 @@ for (const locale of locales) {
       await page.keyboard.press('Escape');
       const groups = page.locator('.developer-groups article');
       await expect(groups).toHaveCount(3);
-      for (const [index, heading] of ['Repositories', 'Servers', 'Containers'].entries()) {
+      const developerGroups = [['Project inspector', 2], ['Servers', 3], ['Containers', 3]];
+      for (const [index, [heading, itemCount]] of developerGroups.entries()) {
         await expect(groups.nth(index).locator('h3')).toHaveText(locale.strings[heading]);
-        await expect(groups.nth(index).locator('li')).toHaveCount(3);
+        await expect(groups.nth(index).locator('li')).toHaveCount(itemCount);
       }
-      await expect(page.locator('#themes .lede')).toHaveText(locale.strings[
-        'Follow the system or choose Light or Dark. Keep native Mac colors, or pick one of seventeen themes.']);
+      await expect(page.locator('.hero__shot img')).toHaveAttribute('alt', locale.strings['List view with live folder sizes']);
       await expect.poll(() => page.evaluate(() => window.strataLocale?.code)).toBe(locale.code);
       await expect(page.locator('[data-version]').first()).toContainText('0.7.1');
       const version = locale.strings['Version {version} · {size} · Free'].split('{size}')[1];

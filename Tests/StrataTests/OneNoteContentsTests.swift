@@ -1,6 +1,5 @@
 @testable import StrataArchives
 import AppKit
-import Synchronization
 import Testing
 @testable import Strata
 @testable import StrataAI
@@ -12,18 +11,12 @@ import Testing
 @testable import StrataSearch
 @testable import StrataPreviews
 
-/// A notebook's table of contents (.onetoc2): read for the order of its sections, in a package Space shows and in a
-/// preview of its own.
+/// A notebook's table of contents lists its sections and groups in order.
 @Suite(.archiveWorkerApp)
 struct OneNoteContentsTests {
     private static let entries: [(name: String, color: UInt32?)] = [
         ("Zebra.one", 0x0011_2233), ("Apple.one", nil), ("Group", nil), ("OneNote_RecycleBin", nil),
     ]
-
-    /// A tar holding `files`, each name with its bytes.
-    private func tar(_ files: [(String, Data)]) -> Data {
-        Data(files.flatMap { ContainerTests.tarFile($0.0, Array($0.1)) } + [UInt8](repeating: 0, count: 1024))
-    }
 
     /// A table of contents of one section saved twice: the second revision depends on the first, copies its table and
     /// gives its list new data; `change` makes it otherwise.
@@ -58,18 +51,9 @@ struct OneNoteContentsTests {
         #expect(read.entries == [.init(name: "Zebra.one", color: 0x0011_2233), .init(name: "Apple.one", color: nil),
                                  .init(name: "Group", color: nil)])
         #expect(read.entries.map(\.isSection) == [true, true, false])
-        #expect(read.positions(of: ["Apple.one", "Other.one", "Zebra.one", "Group"]) == [1, nil, 0, 2])
-        // Of a folder's files, OneNote's own table of contents, or else the first by name.
-        #expect(OneNoteContents.pick(["b.onetoc2", "Open Notebook (old).onetoc2", "a.ONETOC2", "Open Notebook.onetoc2",
-                                      "c.one"]) == 3)
-        #expect(OneNoteContents.pick(["b.onetoc2", "c.one", "a.ONETOC2"]) == 2)
-        #expect(OneNoteContents.pick(["c.one", "notes.onetoc"]) == nil)
-        // A name matches however its accents are composed and its letters capitalized.
-        let accented = try await OneNoteContents.read(OneNoteFixture.contents([("Caf\u{E9}.one", nil)]))
-        #expect(accented.positions(of: ["CAFE\u{301}.ONE"]) == [0])
         let source = try FileReadSource(tree.url("Notebook/Open Notebook.onetoc2"))
         #expect(try await OneNoteContents.open(source).entries == read.entries)
-        // A file larger than one read out of a package is refused whatever it holds.
+        // The size limit also applies to files read from disk.
         try (data + Data(count: OneNoteContents.byteLimit)).write(to: tree.url("Notebook/Large.onetoc2"))
         await #expect(throws: OneStoreError.tooLarge) {
             try await OneNoteContents.open(FileReadSource(tree.url("Notebook/Large.onetoc2")))
@@ -158,78 +142,6 @@ struct OneNoteContentsTests {
         }
         try live(copying: 2)
         #expect(throws: OneStoreError.tooLarge) { try live(copying: 1) }
-    }
-
-    @MainActor @Test func sortedByNameAPackagesItemsComeInItsNotebooksOrderBeforeTheRest() {
-        func item(_ name: String, folder: Bool = false) -> PreviewItem {
-            PreviewItem(.member(ArchiveNode(name: name, isDirectory: folder, size: Int64(name.count)), path: [name]))
-        }
-        let zebra = item("Zebra.one"), apple = item("Apple.one"), group = item("Group", folder: true)
-        let other = item("Other.one"), contents = item("Open Notebook.onetoc2"), folder = item("Assets", folder: true)
-        let listing = PreviewListing()
-        (zebra.notebookPosition, apple.notebookPosition, group.notebookPosition) = (0, 1, 2)
-        let items = [apple, other, contents, folder, zebra, group]
-        // Its section group among its sections, as OneNote shows it, whatever comes first otherwise.
-        listing.rebuild(items)
-        #expect(listing.roots.map(\.name) == ["Zebra.one", "Apple.one", "Group", "Assets", "Open Notebook.onetoc2",
-                                              "Other.one"])
-        listing.order = PreviewListing.Order(key: .name, ascending: false)
-        listing.rebuild(items)
-        #expect(listing.roots.map(\.name) == ["Group", "Apple.one", "Zebra.one", "Assets", "Other.one",
-                                              "Open Notebook.onetoc2"])
-        // Another column sorts as it always does.
-        listing.order = PreviewListing.Order(key: .size, ascending: true)
-        listing.foldersFirst = false
-        listing.rebuild(items)
-        #expect(listing.roots.map(\.name) == ["Assets", "Group", "Apple.one", "Other.one", "Zebra.one",
-                                              "Open Notebook.onetoc2"])
-    }
-
-    @MainActor @Test func aPackageWithATableOfContentsIsListedInItsNotebooksOrder() async throws {
-        let tree = try TestTree("outside")
-        let files: [(String, Data)] = [("Apple.one", Data("a".utf8)), ("Other.one", Data("o".utf8)),
-                                       ("Zebra.one", Data("z".utf8)),
-                                       ("Open Notebook.onetoc2", OneNoteFixture.contents(Self.entries))]
-        try tar(files).write(to: tree.url("Notebook.tar"))
-        let environment = try PreviewEnvironment(tree)
-        let session = PreviewSession(reader: environment.services.directories)
-        defer { session.close() }
-        session.show(try #require(FileEntry(url: tree.url("Notebook.tar"))), showHidden: false, applications: .standard)
-        await session.task?.value
-        await session.notebookTask?.value
-        let placed = session.roots.compactMap { item in item.notebookPosition.map { (item.name, $0) } }
-        #expect(placed.sorted { $0.1 < $1.1 }.map(\.0) == ["Zebra.one", "Apple.one"])
-        // Without one, nothing is ordered.
-        try tar(Array(files.prefix(3))).write(to: tree.url("Plain.tar"))
-        session.show(try #require(FileEntry(url: tree.url("Plain.tar"))), showHidden: false, applications: .standard)
-        await session.task?.value
-        await session.notebookTask?.value
-        #expect(session.roots.count == 3 && session.roots.allSatisfy { $0.notebookPosition == nil })
-        // A notebook folder is ordered the same way, its names however capitalized, once its table of contents is
-        // here: a copy not fetched yet orders nothing until it is.
-        let arrived = Mutex(false)
-        let unfetched = PreviewSession(reader: environment.services.directories,
-                                       isPlaceholder: { $0.pathExtension == "onetoc2" && !arrived.withLock { $0 } })
-        defer { unfetched.close() }
-        let folder = tree.url("Notebook")
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
-        for (name, data) in files { try data.write(to: folder.appending(path: name == "Apple.one" ? "APPLE.one" : name)) }
-        session.show(try #require(FileEntry(url: folder)), showHidden: false, applications: .standard)
-        await session.task?.value
-        await session.notebookTask?.value
-        let inFolder = session.roots.compactMap { item in item.notebookPosition.map { (item.name, $0) } }
-        #expect(inFolder.sorted { $0.1 < $1.1 }.map(\.0) == ["Zebra.one", "APPLE.one"])
-        unfetched.show(try #require(FileEntry(url: folder)), showHidden: false, applications: .standard)
-        await unfetched.task?.value
-        await unfetched.notebookTask?.value
-        #expect(unfetched.roots.count == 4 && unfetched.roots.allSatisfy { $0.notebookPosition == nil })
-        arrived.withLock { $0 = true }
-        unfetched.fetched(try #require(FileEntry(url: folder.appending(path: "Open Notebook.onetoc2"))))
-        await unfetched.notebookTask?.value
-        let fetched = unfetched.roots.compactMap { item in item.notebookPosition.map { (item.name, $0) } }
-        #expect(fetched.sorted { $0.1 < $1.1 }.map(\.0) == ["Zebra.one", "APPLE.one"])
-        #expect(tree.text("outside") == "outside")
-        withExtendedLifetime(environment) {}
     }
 
     @MainActor @Test func itsPreviewListsTheNotebooksSectionsByTheirColors() async throws {

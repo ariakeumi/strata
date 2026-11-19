@@ -8,8 +8,7 @@ import StrataArchiveClient
 // lower the worker's limits (--cpu-limit microseconds, --memory-limit bytes), the output limit (--output-limit bytes)
 // and the read's timeout (--timeout-ms), send the request once more without them after the first (--then-plain: the
 // output and status are then the second's), and exit with the service's own answer instead (--service-status).
-// Extract's read (--unpacking) has no timeout or output limit, and its output goes out as it comes; so does a preview's
-// copy of one file (--streaming), within its timeout.
+// Extract's read (--unpacking) has no timeout or output limit, and its output goes out as it comes.
 
 func option(_ name: String) -> Int? {
     let arguments = CommandLine.arguments
@@ -58,24 +57,12 @@ func run() async -> Int32 {
         let limits = ArchiveService.Limits(cpu: option("--cpu-limit").map { .microseconds($0) },
                                            memory: option("--memory-limit"), heap: option("--heap-limit"))
         let timeout = option("--timeout-ms").map { TimeInterval($0) / 1000 } ?? 20
-        /// A read whose output goes out as it comes. A reader that stops reading ends the read, not the harness.
-        func passOn(_ read: (PipeReader) throws -> ArchiveService.Reply) throws -> Int32 {
+        if CommandLine.arguments.contains("--unpacking") {
             guard fcntl(STDOUT_FILENO, F_SETNOSIGPIPE, 1) == 0 else { throw POSIXError(.EIO) }
             let reader = try PipeReader()
-            let reply = try read(reader)
+            let reply = try ArchiveService.unpack(encoded: request, limits: limits, to: service, archive: archive,
+                                                  reader: reader) { try forward($0, through: reader) }
             return (reply.ended ? reply.outcome : .unreadable).rawValue
-        }
-        if CommandLine.arguments.contains("--unpacking") {
-            return try passOn { reader in
-                try ArchiveService.unpack(encoded: request, limits: limits, to: service, archive: archive,
-                                          reader: reader) { try forward($0, through: reader) }
-            }
-        }
-        if CommandLine.arguments.contains("--streaming") {
-            return try passOn { reader in
-                try ArchiveService.stream(encoded: request, limits: limits, to: service, archive: archive,
-                                          timeout: timeout, reader: reader) { try forward($0, through: reader) }
-            }
         }
         var reply = try await send(limits, outputLimit: option("--output-limit"), timeout: timeout)
         if CommandLine.arguments.contains("--then-plain") { reply = try await send(ArchiveService.Limits(), outputLimit: nil) }

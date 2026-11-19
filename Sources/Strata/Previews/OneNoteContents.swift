@@ -17,18 +17,8 @@ nonisolated package struct OneNoteContents: Sendable {
 
     package let entries: [Entry]
 
-    /// Read out of a package to order its sections: past this, it isn't a table of contents worth holding.
     package static let byteLimit = 1 << 20
     package static let fileExtension = "onetoc2"
-    /// What OneNote names a notebook's, and each section group's, among other files that may end the same way.
-    package static let fileName = "Open Notebook.onetoc2"
-
-    /// Which of `names` a folder's table of contents is: OneNote's own name first, otherwise the first by name.
-    package static func pick(_ names: [String]) -> Int? {
-        let candidates = names.indices.filter { (names[$0] as NSString).pathExtension.lowercased() == fileExtension }
-        return candidates.first { names[$0].lowercased() == fileName.lowercased() }
-            ?? candidates.min { names[$0].localizedStandardCompare(names[$1]) == .orderedAscending }
-    }
 
     private enum Property {
         static let children: UInt32 = 0x1CF6
@@ -44,7 +34,7 @@ nonisolated package struct OneNoteContents: Sendable {
         return try OneNoteContents(store: try OneStore(data, type: .contents))
     }
 
-    /// Read only from the file it was chosen as, checked before and after, and no larger than one read out of a package.
+    /// Read only from the file it was chosen as, checked before and after, and within the same size limit as an in-memory read.
     @concurrent package static func open(_ source: FileReadSource) async throws -> OneNoteContents {
         try Task.checkCancellation()
         guard source.size <= byteLimit else { throw OneStoreError.tooLarge }
@@ -77,15 +67,5 @@ nonisolated package struct OneNoteContents: Sendable {
                 }.map(\.element.entry)
             }
         }
-    }
-
-    /// Where each of `names` comes in the notebook's order; a name it doesn't list has none. Names match however
-    /// they're capitalized, as on Windows, where notebooks are made, and however their accents are composed.
-    package func positions(of names: [String]) -> [Int?] {
-        // Swift compares strings however their accents are composed.
-        func key(_ name: String) -> String { name.lowercased() }
-        var order: [String: Int] = [:]
-        for (index, entry) in entries.enumerated() where order[key(entry.name)] == nil { order[key(entry.name)] = index }
-        return names.map { order[key($0)] }
     }
 }

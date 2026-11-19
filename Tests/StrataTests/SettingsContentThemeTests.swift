@@ -15,11 +15,13 @@ extension ColorThemeTests {
         let saved = ThemeStyle.options, contrast = ThemeStyle.highContrast
         defer { ThemeStyle.apply(saved, windows: [], highContrast: contrast) }
         ThemeStyle.apply(ColorThemeOptions(), windows: [], highContrast: false)
-        let controller = SettingsWindowController(preferences: .shared, userThemes: .shared)
+        let environment = try IndependentEnvironment()
+        let controller = SettingsWindowController(preferences: environment.preferences,
+                                                  smb: environment.services.smb, places: environment.services.places)
         let window = try #require(controller.window)
         let tabs = try #require(window.contentViewController as? NSTabViewController)
         defer { window.contentViewController = nil }
-        #expect(tabs.tabStyle == .toolbar && tabs.tabViewItems.count == 5)
+        #expect(tabs.tabStyle == .toolbar && tabs.tabViewItems.count == 6)
 
         for name in [NSAppearance.Name.aqua, .darkAqua] {
             let appearance = try #require(NSAppearance(named: name))
@@ -49,7 +51,7 @@ extension ColorThemeTests {
                     + (index == 4 ? [NSPoint(x: 28, y: 110)] : [])
                 let original = try points.map { try settingsPixel(native, view: host, at: $0) }
 
-                for palette in ColorTheme.allCases.filter({ $0 != .system }) + [.system] {
+                for (paletteIndex, palette) in (ColorTheme.allCases.filter { $0 != .system } + [.system]).enumerated() {
                     ThemeStyle.apply(ColorThemeOptions(palette: palette), windows: [renderWindow], highContrast: false)
                     let canvas = try chromeColorPixel(ThemeStyle.surface(.content), appearance: appearance)
                     let expectedColors = palette == .system ? original : points.map { _ in canvas }
@@ -65,7 +67,7 @@ extension ColorThemeTests {
                     #expect(tab.viewController === pane && renderWindow.contentView === host)
                     #expect(!window.isVisible && !renderWindow.isVisible)
                     if ProcessInfo.processInfo.environment["STRATA_CAPTURE_SETTINGS_PREVIEWS"] == "1" {
-                        let path = "/tmp/strata-settings-\(index)-\(name.rawValue)-\(palette.rawValue).png"
+                        let path = "/tmp/strata-settings-\(index)-\(name.rawValue)-\(paletteIndex).png"
                         try #require(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: path))
                     }
                 }

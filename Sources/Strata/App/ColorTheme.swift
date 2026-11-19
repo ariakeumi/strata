@@ -1,74 +1,20 @@
 import AppKit
 import Synchronization
 
-/// A hue shared by the entire browser; file types, tags and status colors keep their meanings.
-nonisolated package struct ColorTheme: RawRepresentable, CaseIterable, Hashable, Sendable {
-    package let rawValue: String
-    private let definition: ThemeDefinition?
-    /// A bundled theme's name is a key of the app's translations; a theme of the user's is called as its file says.
-    private let translatesName: Bool
+nonisolated package enum ColorTheme: Equatable, Sendable {
+    case system
+    /// Used by rendering tests to exercise restoration of native materials.
+    case tinted(ThemeRGB)
 
-    package static let system = ColorTheme()
-    /// The system's and the bundled themes. Those of the user are a `UserThemes`' to say: `choices(with:)`.
-    package static var allCases: [ColorTheme] { [.system] + ThemeCatalog.bundled }
-
-    /// The themes to choose from: the system's, the bundled ones, then the user's as `userThemes` last read them.
-    package static func choices(with userThemes: UserThemes) -> [ColorTheme] { allCases + userThemes.themes }
-
-    // Existing call sites keep their typed names; contributed themes need no Swift declaration.
-    package static let graphite = ColorTheme(rawValue: "graphite") ?? .system
-    package static let blue = ColorTheme(rawValue: "blue") ?? .system
-    package static let green = ColorTheme(rawValue: "green") ?? .system
-    package static let purple = ColorTheme(rawValue: "purple") ?? .system
-    package static let sand = ColorTheme(rawValue: "sand") ?? .system
-    package static let teal = ColorTheme(rawValue: "teal") ?? .system
-    package static let rose = ColorTheme(rawValue: "rose") ?? .system
-    package static let amber = ColorTheme(rawValue: "amber") ?? .system
-
-    private init() { rawValue = "system"; definition = nil; translatesName = true }
-
-    package init(definition: ThemeDefinition, translatesName: Bool) {
-        rawValue = definition.id
-        self.definition = definition
-        self.translatesName = translatesName
-    }
-
-    /// The system's or a bundled theme by its ID.
-    package init?(rawValue: String) {
-        guard let theme = Self.allCases.first(where: { $0.rawValue == rawValue }) else { return nil }
-        self = theme
-    }
-
-    /// The theme with this ID: the system's, a bundled one, or one of the user's as `userThemes` last read them.
-    package static func named(_ id: String, among userThemes: UserThemes) -> ColorTheme? {
-        ColorTheme(rawValue: id) ?? userThemes.theme(withID: id)
-    }
-
-    /// A theme of the user's whose file changed keeps its ID and is another theme: what was drawn in it is redrawn.
-    package static func == (lhs: Self, rhs: Self) -> Bool { lhs.rawValue == rhs.rawValue && lhs.definition == rhs.definition }
-    package func hash(into hasher: inout Hasher) { hasher.combine(rawValue) }
-
-    package var title: String {
-        guard let definition else { return String(localized: "System", comment: "Color theme: use the Mac’s colors") }
-        // localize.py extracts names and translator notes from the bundled theme files.
-        return translatesName ? String(localized: String.LocalizationValue(definition.name)) : definition.name
-    }
-
-    /// What the theme is called before translation.
-    package var name: String { definition?.name ?? "System" }
-
-    package var seed: ThemeRGB { definition?.seed ?? ThemeRGB(red: 0.38, green: 0.44, blue: 0.67) }
-
-    /// A published scheme's own colors for this appearance, or nil when they derive from the seed.
-    package func statedColors(dark: Bool) -> ThemeColors? {
-        guard let colors = definition?.colors else { return nil }
-        return dark ? colors.dark : colors.light
+    package var seed: ThemeRGB {
+        switch self {
+        case .system: ThemeRGB(red: 0.38, green: 0.44, blue: 0.67)
+        case .tinted(let rgb): rgb
+        }
     }
 
     package func surface(_ role: ThemeSurfaceRole, dark: Bool) -> NSColor {
-        if let stated = statedColors(dark: dark) { return stated.surface(role).color }
-        return seed.surface(role, dark: dark, tintStrength: definition?.tintStrength ?? 1,
-                            brightnessShift: dark ? (definition?.darkShift ?? 0) : (definition?.lightShift ?? 0))
+        seed.surface(role, dark: dark)
     }
 
     /// Light selections use a stronger shade of the pastel surfaces; dark selections keep readable light text.
@@ -79,7 +25,6 @@ nonisolated package struct ColorTheme: RawRepresentable, CaseIterable, Hashable,
         let rgb = seed
         return NSColor(name: nil) { appearance in
             if highContrast || appearance.isHighContrast { return .selectedContentBackgroundColor }
-            if let stated = self.statedColors(dark: appearance.isDark) { return stated.selection.color }
             if appearance.isDark { return rgb.selectionColor }
             let surface = self.surface(.chrome, dark: false)
             return surface.blended(withFraction: 0.08, of: .black) ?? surface
@@ -121,10 +66,6 @@ nonisolated package struct ThemeRGB: Equatable, Sendable {
         return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
     }
 
-    package func contrast(with other: Self) -> CGFloat {
-        (max(luminance, other.luminance) + 0.05) / (min(luminance, other.luminance) + 0.05)
-    }
-
     package var selectionRGB: Self {
         var result = self
         // Gold and green need darker selections to leave room for both names and secondary metadata.
@@ -136,8 +77,7 @@ nonisolated package struct ThemeRGB: Equatable, Sendable {
 
     package var selectionColor: NSColor { selectionRGB.color }
 
-    package func surface(_ role: ThemeSurfaceRole, dark: Bool, tintStrength: CGFloat = 1,
-                         brightnessShift: CGFloat = 0) -> NSColor {
+    package func surface(_ role: ThemeSurfaceRole, dark: Bool) -> NSColor {
         let maxChannel = max(red, green, blue), minChannel = min(red, green, blue)
         let chroma = maxChannel - minChannel
         var hue: CGFloat = 0
@@ -148,7 +88,7 @@ nonisolated package struct ThemeRGB: Equatable, Sendable {
             hue /= 6
             if hue < 0 { hue += 1 }
         }
-        let saturation: CGFloat = chroma < 0.025 ? 0 : (dark ? 0.33 : 0.40) * tintStrength
+        let saturation: CGFloat = chroma < 0.025 ? 0 : (dark ? 0.33 : 0.40)
         var level: CGFloat
         switch role {
         case .content: level = dark ? 0.29 : 0.92
@@ -159,7 +99,6 @@ nonisolated package struct ThemeRGB: Equatable, Sendable {
         case .alternatingRow: level = dark ? 0.31 : 0.90
         }
         if dark, chroma < 0.025 { level -= 0.10 }
-        level = min(max(level + brightnessShift, 0), 1)
         let c = (1 - abs(2 * level - 1)) * saturation
         let x = c * (1 - abs((hue * 6).truncatingRemainder(dividingBy: 2) - 1))
         let m = level - c / 2
@@ -205,10 +144,9 @@ nonisolated package struct ColorThemeOptions: Equatable, Sendable {
 
     package func accentColor(highContrast: Bool) -> NSColor {
         guard palette != .system else { return .controlAccentColor }
-        let rgb = seed.selectionRGB, palette = palette
+        let rgb = seed.selectionRGB
         return NSColor(name: nil) { appearance in
             if highContrast || appearance.isHighContrast { return .labelColor }
-            if let stated = palette.statedColors(dark: appearance.isDark) { return stated.accent.color }
             let lift: CGFloat = appearance.isDark ? 0.90 : 0
             let scale: CGFloat = appearance.isDark ? 1 : 0.80
             return NSColor(srgbRed: (rgb.red + (1 - rgb.red) * lift) * scale,
@@ -219,37 +157,6 @@ nonisolated package struct ColorThemeOptions: Equatable, Sendable {
 
     package func selectionColor(highContrast: Bool) -> NSColor {
         palette.selectionColor(highContrast: highContrast)
-    }
-
-    private static let paletteKey = "colorTheme", tintKey = "tintWindow"
-
-    /// The ID of the theme chosen in `defaults`, whether or not anything knows a theme by it.
-    package static func chosenID(in defaults: UserDefaults) -> String {
-        defaults.string(forKey: paletteKey) ?? ColorTheme.system.rawValue
-    }
-
-    private static func tintsWindow(in defaults: UserDefaults) -> Bool {
-        defaults.object(forKey: tintKey) as? Bool ?? true
-    }
-
-    /// A chosen theme of the user's that `userThemes` doesn't know stays chosen, and is drawn as the system's until
-    /// its file is read.
-    package static func read(from defaults: UserDefaults, userThemes: UserThemes) -> Self {
-        Self(palette: ColorTheme.named(chosenID(in: defaults), among: userThemes) ?? .system,
-             tintsWindow: tintsWindow(in: defaults))
-    }
-
-    /// Whether this is the choice `defaults` hold. A chosen theme whose file is gone reads as the system's and is
-    /// still the choice, so choosing the system's then is another choice, and one to save.
-    package func isSaved(in defaults: UserDefaults) -> Bool {
-        palette.rawValue == Self.chosenID(in: defaults) && tintsWindow == Self.tintsWindow(in: defaults)
-    }
-
-    /// Saves the choice, and with a theme of the user's the copy of its file that the next launch draws it from.
-    package func save(in defaults: UserDefaults, userThemes: UserThemes) {
-        defaults.set(palette.rawValue, forKey: Self.paletteKey)
-        defaults.set(tintsWindow, forKey: Self.tintKey)
-        userThemes.keepFile(of: palette, in: defaults)
     }
 
     package func surfaceColor(in appearance: NSAppearance, reduceTransparency: Bool, highContrast: Bool = false,

@@ -1,8 +1,9 @@
 import Foundation
 import NetFS
+import StrataSupport
 
-/// Go ▸ Connect to Server…: mounts an SMB, AFP, NFS or WebDAV share the way Finder does. macOS asks for the name and
-/// password itself (and can keep them in the Keychain); Strata never sees them unless they're typed into the address.
+/// Native NetFS mounting for Connect to Server and saved SMB profiles. In the one-off flow,
+/// macOS handles login and its own Keychain.
 nonisolated package enum ServerConnection {
     package static let schemes: Set<String> = ["smb", "cifs", "afp", "nfs", "https", "http"]
 
@@ -91,23 +92,38 @@ nonisolated package enum ServerConnection {
         }
     }
 
+    package struct SMBOptions: Sendable {
+        let password: String?
+        let guest: Bool
+        let interactive: Bool
+
+        package init(password: String?, guest: Bool, interactive: Bool) {
+            self.password = password
+            self.guest = guest
+            self.interactive = interactive
+        }
+    }
+
     /// Mounts `url` (or finds it already mounted), letting macOS ask for a name and password. Returns where it's
     /// mounted; nil when you cancelled.
-    package static func mount(_ url: URL, request: Request) async -> Result<URL, Problem>? {
+    package static func mount(_ url: URL, request: Request, smb: SMBOptions? = nil) async -> Result<URL, Problem>? {
         await withCheckedContinuation { continuation in
             guard request.attach(continuation) else { return continuation.resume(returning: nil) }
             let open = NSMutableDictionary()
-            open[kNAUIOptionKey] = kNAUIOptionAllowUI
+            open[kNAUIOptionKey] = smb?.interactive == false ? kNAUIOptionNoUI : kNAUIOptionAllowUI
+            if smb?.guest == true { open[kNetFSUseGuestKey] = true }
             let mountOptions = NSMutableDictionary()
             var id: AsyncRequestID?
-            let status = NetFSMountURLAsync(url as CFURL, nil, nil, nil, open, mountOptions, &id, DispatchQueue.main) { code, _, mountpoints in
+            let password = smb?.password.map { $0 as CFString }
+            let user = password.flatMap { _ in url.user(percentEncoded: false).map { $0 as CFString } }
+            let status = NetFSMountURLAsync(url as CFURL, nil, user, password, open, mountOptions, &id, DispatchQueue.main) { code, _, mountpoints in
                 let paths = (mountpoints as? [String]) ?? []
                 // Already mounted: NetFS says so (EEXIST), sometimes with where; else it's found among the mounted volumes.
-                if code == 0 || code == EEXIST, let path = paths.first {
+                if code == 0 || (code == EEXIST && smb == nil), let path = paths.first {
                     request.finish(.success(URL(fileURLWithPath: path, isDirectory: true)))
                 } else if code == EEXIST {
                     Task {
-                        let found = await mounted(url)
+                        let found = if let smb { await mountedSMB(url, guest: smb.guest) } else { await mounted(url) }
                         request.finish(found.map { .success(URL(fileURLWithPath: $0.path, isDirectory: true)) }
                                        ?? problem(code).map { .failure($0) })
                     }
@@ -120,6 +136,38 @@ nonisolated package enum ServerConnection {
             } else {
                 request.started(id)
             }
+        }
+    }
+
+    /// SMB profile reuse must also agree on port and any explicit account. A matching share can
+    /// belong to a different server or login even when the mount point has the same display name.
+    package static func matchesSMB(_ mounted: URL, share: URL, guest: Bool, exactAccount: Bool = false) -> Bool {
+        guard let found = URLComponents(url: mounted, resolvingAgainstBaseURL: false),
+              let wanted = URLComponents(url: share, resolvingAgainstBaseURL: false),
+              let host = wanted.host, let foundHost = found.host,
+              ["smb", "cifs"].contains(found.scheme?.lowercased() ?? ""),
+              ["smb", "cifs"].contains(wanted.scheme?.lowercased() ?? ""),
+              host.caseInsensitiveCompare(foundHost) == .orderedSame,
+              (wanted.port ?? 445) == (found.port ?? 445) else { return false }
+        let path = wanted.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !path.isEmpty, !path.contains("/"),
+              path.caseInsensitiveCompare(found.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))) == .orderedSame
+        else { return false }
+        if guest { return found.user?.caseInsensitiveCompare("guest") == .orderedSame }
+        guard let user = wanted.user else { return !exactAccount || found.user == nil }
+        return found.user?.caseInsensitiveCompare(user) == .orderedSame
+    }
+
+    package static func mountedSMB(_ url: URL, guest: Bool) async -> URL? {
+        guard !url.path.isEmpty, url.path != "/" else { return nil }
+        return await OwnThread.run {
+            let keys: Set<URLResourceKey> = [.volumeURLForRemountingKey]
+            let volumes = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: Array(keys), options: []) ?? []
+            let matches = volumes.filter { volume in
+                guard let address = (try? volume.resourceValues(forKeys: keys))?.volumeURLForRemounting else { return false }
+                return matchesSMB(address, share: url, guest: guest)
+            }
+            return matches.count == 1 ? matches.first : nil
         }
     }
 

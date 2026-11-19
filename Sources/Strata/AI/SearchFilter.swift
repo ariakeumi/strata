@@ -2,7 +2,7 @@ import Foundation
 import UniformTypeIdentifiers
 
 /// A structured file search: what `QueryInterpreter` makes of "pdfs from last week bigger than 10mb about invoices".
-/// Metadata fields are for the filename index; `contentQuery` is for `SemanticIndex`.
+/// Metadata and free-text terms extracted from a natural-language request.
 package nonisolated struct SearchFilter: Sendable, Hashable, Codable {
     package enum Kind: String, Sendable, Hashable, Codable, CaseIterable {
         case folder, document, pdf, text, image, movie, audio, archive, code, spreadsheet, presentation, application, diskImage, book, comic
@@ -117,8 +117,8 @@ package nonisolated struct SearchFilter: Sendable, Hashable, Codable {
                 return identifiers.contains { UTType($0).map(type.conforms(to:)) ?? false }
             }
             switch self {
-            case .book: return !isDirectory && IndexSearch.extensions(for: .book).contains(ext)
-            case .comic: return !isDirectory && IndexSearch.extensions(for: .comic).contains(ext)
+            case .book: return !isDirectory && BookFormat.books.contains(ext)
+            case .comic: return !isDirectory && BookFormat.comics.contains(ext)
             case .folder: return false
             case .pdf: return ext == "pdf" || type?.conforms(to: .pdf) == true
             case .image: return type?.conforms(to: .image) == true
@@ -143,7 +143,7 @@ package nonisolated struct SearchFilter: Sendable, Hashable, Codable {
                     || (type?.conforms(to: .plainText) == true && type?.conforms(to: .sourceCode) != true)
                     || conforms(["org.openxmlformats.wordprocessingml.document", "com.microsoft.word.doc", "com.apple.iwork.pages.sffpages",
                                  "com.apple.iwork.pages.pages", "org.oasis-open.opendocument.text"])
-                    || ["docx", "doc", "pages", "odt", "md"].contains(ext) || IndexSearch.extensions(for: .book).contains(ext)
+                    || ["docx", "doc", "pages", "odt", "md"].contains(ext) || BookFormat.books.contains(ext)
             }
         }
     }
@@ -160,15 +160,15 @@ package nonisolated struct SearchFilter: Sendable, Hashable, Codable {
     package var modifiedBefore: Date?
     /// Every fragment must appear in the name (case- and accent-insensitive).
     package var nameContains: [String] = []
-    /// What the documents are about, for `SemanticIndex.search`.
+    /// What the requested documents are about.
     package var contentQuery: String?
     /// Words nothing else claimed (no model to place them). An item matches when its name contains at least one of them
-    /// (plural-tolerant); a content-aware search can also run `keywords.joined(" ")` through `SemanticIndex`.
+    /// (plural-tolerant).
     package var keywords: [String] = []
 
     package var isEmpty: Bool { self == SearchFilter() }
 
-    /// Matches metadata only (`contentQuery` needs the semantic index).
+    /// Matches the item’s metadata.
     package func matches(name: String, contentType: UTType?, isDirectory: Bool, isPackage: Bool = false, size: Int64?, modified: Date?) -> Bool {
         let ext = (name as NSString).pathExtension.lowercased()
         if !kinds.isEmpty || !extensions.isEmpty {

@@ -3,9 +3,7 @@ import Foundation
 /// Reading a folder is independent of the AppKit view that presents it. Production keeps the existing disk/remote
 /// loader; tests can hold a read open and deliver success or failure in a chosen order.
 nonisolated struct DirectoryReader: Sendable {
-    static let previewLimit = 50_000
     let read: @Sendable (URL, Bool, ApplicationsFolders) async throws -> Listing
-    private let previewRead: @Sendable (URL, Bool, ApplicationsFolders) async throws -> Listing
     private let readBatches: @Sendable (URL, Bool, ApplicationsFolders, @escaping DirectoryLoader.Receive) async throws -> Void
     let invalidate: @Sendable (URL) async -> Void
 
@@ -22,8 +20,7 @@ nonisolated struct DirectoryReader: Sendable {
     init(invalidate: @escaping @Sendable (URL) async -> Void = { _ in },
          listing: @escaping @Sendable (URL, Bool, ApplicationsFolders) async throws -> Listing,
          batches: (@Sendable (URL, Bool, ApplicationsFolders, @escaping DirectoryLoader.Receive) async throws -> Void)? = nil) {
-        self.read = listing
-        self.previewRead = listing
+        read = listing
         self.invalidate = invalidate
         readBatches = batches ?? { folder, hidden, applications, receive in
             let value = try await listing(folder, hidden, applications)
@@ -36,16 +33,10 @@ nonisolated struct DirectoryReader: Sendable {
         read = { folder, hidden, applications in
             try await DirectoryLoader.load(folder, showHidden: hidden, applications: applications, copies: copies)
         }
-        previewRead = { folder, hidden, applications in
-            try await DirectoryLoader.loadPreview(folder, showHidden: hidden, applications: applications, copies: copies,
-                                                  limit: Self.previewLimit)
-        }
         readBatches = { folder, hidden, applications, receive in
             try await DirectoryLoader.stream(folder, showHidden: hidden, applications: applications, copies: copies, receive: receive)
         }
     }
-
-    var forPreview: DirectoryReader { DirectoryReader(invalidate: invalidate, listing: previewRead) }
 
     func load(_ folder: URL, showHidden: Bool, applications: ApplicationsFolders) async throws -> Listing {
         try await read(folder, showHidden, applications)

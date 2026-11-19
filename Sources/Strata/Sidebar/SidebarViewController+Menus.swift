@@ -1,14 +1,24 @@
 import AppKit
 
-/// Right-click: folders and volumes open in a new tab, copy their path or eject; frequent folders and saved searches can
-/// be removed.
 extension SidebarViewController: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        guard let item = outline.item(atRow: outline.clickedRow) as? SidebarItem else { return }
+        let clicked = outline.item(atRow: outline.clickedRow)
+        guard let item = clicked as? SidebarItem else {
+            addVisibilityItems(clicked as? SidebarSection, to: menu)
+            return
+        }
+        if case .recents = item.target {
+            addHideItem(to: menu, action: #selector(hideRecents(_:)))
+            return
+        }
         if case .containers = item.target { return }
         if case .workspace(let name) = item.target {
             addWorkspaceItems(name, to: menu)
+            return
+        }
+        if case .smb(let id) = item.target {
+            addSMBMenu(to: menu, id: id, connect: #selector(openSMB(_:)), manage: #selector(manageSMB(_:)), target: self)
             return
         }
         if case .server(let id) = item.target, let server = services.remote.servers.server(id: id) {
@@ -46,7 +56,10 @@ extension SidebarViewController: NSMenuDelegate {
         add("Open in New Tab", #selector(openInNewTab(_:)), url)
         add("Copy Path", #selector(copyItemPath(_:)), url)
         menu.addItem(.separator())
-        if favorite {
+        if item.groupID != nil {
+            addHideItem(to: menu, action: #selector(removeGroupFolder(_:)), representedObject: item)
+            if canAddToFavorites(item) { add("Add to Favorites", #selector(addFavorite(_:)), url) }
+        } else if favorite {
             add("Remove from Sidebar", #selector(removeFavorite(_:)), url)
         } else if canAddToFavorites(item) {
             add("Add to Favorites", #selector(addFavorite(_:)), url)
@@ -59,6 +72,75 @@ extension SidebarViewController: NSMenuDelegate {
             add("Eject “\(item.title)”", #selector(ejectItem(_:)), url)
         }
     }
+
+    private func addHideItem(to menu: NSMenu, action: Selector, representedObject: Any? = nil) {
+        let remove = NSMenuItem(title: String(localized: "Remove from Sidebar"), action: action, keyEquivalent: "")
+        remove.target = self
+        remove.representedObject = representedObject
+        menu.addItem(remove)
+    }
+
+    private func addVisibilityItems(_ section: SidebarSection?, to menu: NSMenu) {
+        let create = NSMenuItem(title: String(localized: "New Group…"), action: #selector(newSidebarGroup(_:)), keyEquivalent: "")
+        create.target = self
+        menu.addItem(create)
+        if let section {
+            if let id = section.groupID {
+                let rename = NSMenuItem(title: String(localized: "Rename…"), action: #selector(renameSidebarGroup(_:)), keyEquivalent: "")
+                rename.target = self
+                rename.representedObject = id
+                menu.addItem(rename)
+            }
+            addHideItem(to: menu, action: #selector(hideSection(_:)), representedObject: section.id)
+        }
+
+        let hidden = preferences.hiddenSidebarSections
+        let restore = NSMenu()
+        for kind in SidebarSection.Kind.allCases where hidden.contains(kind.rawValue) {
+            let item = NSMenuItem(title: kind.title, action: #selector(showSection(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = kind.rawValue
+            restore.addItem(item)
+        }
+        for group in preferences.sidebarGroups {
+            let id = SidebarSection.id(forGroup: group.id)
+            guard hidden.contains(id) else { continue }
+            let item = NSMenuItem(title: group.name, action: #selector(showSection(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = id
+            restore.addItem(item)
+        }
+        if preferences.sidebarHidesRecents && !hidden.contains(SidebarSection.Kind.favorites.rawValue) {
+            let item = NSMenuItem(title: SidebarItem.recentsTitle, action: #selector(showRecents(_:)), keyEquivalent: "")
+            item.target = self
+            restore.addItem(item)
+        }
+        guard !restore.items.isEmpty else { return }
+        let show = NSMenuItem(title: String(localized: "Show in Sidebar"), action: nil, keyEquivalent: "")
+        show.submenu = restore
+        menu.addItem(show)
+    }
+
+    @objc private func hideSection(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        preferences.hiddenSidebarSections.insert(id)
+    }
+
+    @objc private func showSection(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        preferences.hiddenSidebarSections.remove(id)
+    }
+
+    @objc private func hideRecents(_ sender: NSMenuItem) { preferences.sidebarHidesRecents = true }
+
+    @objc private func showRecents(_ sender: NSMenuItem) { preferences.sidebarHidesRecents = false }
+
+    @objc private func openSMB(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? UUID else { return }
+        onSelect?(.smb(id))
+    }
+
+    @objc private func manageSMB(_ sender: NSMenuItem) { services.showSetting(.smbConnections) }
 
     /// Disconnect (while connected), edit, copy its address, remove.
     private func addServerItems(_ server: RemoteServer, to menu: NSMenu) {
@@ -193,4 +275,15 @@ extension SidebarViewController: NSMenuDelegate {
         guard let url = sender.representedObject as? URL else { return }
         Places.eject(url, from: view.window)
     }
+}
+
+/// Saved SMB rows in both sidebar modes use the same commands.
+func addSMBMenu(to menu: NSMenu, id: UUID, connect: Selector, manage: Selector, target: AnyObject) {
+    let open = NSMenuItem(title: String(localized: "Connect", comment: "Button: connect to the server"), action: connect, keyEquivalent: "")
+    open.target = target
+    open.representedObject = id
+    menu.addItem(open)
+    let settings = NSMenuItem(title: String(localized: "SMB Connections…"), action: manage, keyEquivalent: "")
+    settings.target = target
+    menu.addItem(settings)
 }

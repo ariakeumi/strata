@@ -6,7 +6,7 @@
 
 <h1 align="center">Strata Files</h1>
 
-<p align="center"><b>為你的 Mac 而生的檔案管理工具。</b><br> 毫秒間找到檔案，看清磁碟空間的去向，用鍵盤輕快地處理檔案。<br> 原生體驗，彷彿 macOS 內建。</p>
+<p align="center"><b>你的 Mac 值得擁有的檔案管理器。</b><br> 搜尋目前的檔案夾、查看磁碟空間用在哪裡，並用鍵盤操作，<br> 體驗如同 macOS 內建的原生 App。</p>
 
 <p align="center">
   <a href="https://github.com/cristipufu/strata-files/releases/latest"><img src="https://img.shields.io/github/v/release/cristipufu/strata-files?style=flat&amp;label=release&amp;color=8150cf" alt="最新版本" height="20"></a>
@@ -21,7 +21,7 @@
 <!-- readme-languages:end -->
 
 <p align="center">
-  <img src="../screenshots/themes.png" alt="以藍色、藍綠色、沙色、紫色和原生系統淺色模式顯示示範檔案夾的 Strata" width="900">
+  <img src="../screenshots/hero.png" alt="列表顯示方式，即時顯示檔案夾大小" width="900">
 </p>
 
 ---
@@ -30,37 +30,35 @@
 
 Finder 原本夠用，直到你需要尋找檔案、查明磁碟被什麼佔滿，或搬移幾百個檔案卻不想等著彩球轉圈。Strata 保留你熟悉的外觀、快速鍵、拖放、快速查看與分頁，再補上你一直想要的功能：
 
-- **跟得上你的搜尋。** 輸入時就能搜尋個人專屬檔案夾和「應用程式」中的所有檔案。索引建立後，即使有數百萬個檔案，也能在毫秒間顯示結果。
-- **值得信賴的大小顯示。** 打開檔案夾就能看到實際大小，檔案變更時也會即時更新。
+- **檔案夾搜尋。** 按下 ⌘F 搜尋目前的檔案夾及其子檔案夾。
+- **檔案夾大小。** 在檢閱器和磁碟用量顯示方式中測量空間。
 - **鍵盤優先的工作方式。** 按 ⌘K 前往任何位置，輸入文字就能篩選檔案夾，願意的話全程不用滑鼠。
 - **安心處理檔案。** 暫停大型拷貝，取代前並排比較衝突檔案，即使結束 App 後也能還原先前的操作。
-- **為創作者準備。** 每個檔案都有 Git 狀態，清理功能識別專案類型，還能在終端機中打開，預覽程式碼、資料與壓縮檔。
+- **為創作者準備。** 在終端機中開啟資料夾，並預覽程式碼、資料與壓縮檔。
 
-## 想找的，即刻找到
+## 搜尋目前的檔案夾
 
-輸入名稱、使用精確篩選條件，或用日常英語描述：*「videos bigger than 500 MB」*、*「pdfs from last month」*。Strata 能理解這些查詢，顯示解析出的條件，並在你輸入完之前給出結果。還可使用 `regex:` 和 **區分大小寫**，或透過 Spotlight 搜尋內容與中繼資料：`camera:iphone`、`width:>1920`、`duration:>10m`、*「photos taken with iPhone」*。將搜尋存到側邊欄後，結果會隨檔案變更即時更新。
+依名稱搜尋、使用篩選條件，或輸入 *"videos bigger than 500 MB"*、*"pdfs from last month"* 等查詢。搜尋檔名時可使用 `regex:` 和**區分大小寫**。`camera:iphone`、`width:>1920` 和 `duration:>10m` 等查詢會透過 Spotlight 尋找中繼資料。將搜尋儲存到側邊欄即可再次執行。
 
 <p align="center"><img src="../screenshots/search.png" alt="用日常英語搜尋大型影片檔案的結果" width="820"></p>
 
 ## 按 ⌘K，想去哪就去哪
 
-一個快速鍵就能打開指令面板，找到常用檔案夾、索引中的檔案與 Strata 指令。輸入 `acme-web/`，不用打開視窗就能列出專案內容；也可以輸入 `pdfs from last week` 這類英語查詢。
+按下快速鍵即可打開命令面板，尋找常用檔案夾、目前檔案夾中的項目和 Strata 命令。輸入 `acme-web/` 可列出專案內容。
 
-喜歡 Windows 那樣的搜尋框？開啟「設定 ▸ 一般 ▸ Dock 中的搜尋框」，Strata 圖像旁就會出現搜尋欄。不論身處哪個 App，都能使用與 ⌘K 相同的搜尋，還能依內容尋找 App 和文件。
+在「設定 ▸ 一般 ▸ Dock 中的搜尋框」啟用功能，即可尋找 App、檔案夾和命令，也可以在 Strata 目前的檔案夾中開始搜尋。
 
 <p align="center"><img src="../screenshots/palette.png" alt="指令面板列出專案檔案夾的內容" width="820"></p>
 
 ## 看清空間都用在哪裡
 
-打開檔案夾就能看到大小，不必等待「計算中⋯」。切換至 **磁碟使用量**，用地圖查看檔案夾；再透過側邊欄的 **大型檔案** 與 **重複項目**，幾分鐘內就能騰出數 GB 空間。
+打開檔案夾就能看到大小，不必等待「計算中⋯」。切換至 **磁碟使用量**，用地圖查看檔案夾。
 
 <p align="center"><img src="../screenshots/treemap.webp" alt="檔案夾的磁碟使用量地圖" width="820"></p>
 
 ## 查看內容，不必離開。
 
-按下**空白鍵**即可預覽檔案，或查看檔案夾和封存檔中的內容。瀏覽列表或縮覽圖，在旁邊預覽檔案，無需離開目前的檔案夾即可篩選、排序、開啟或拷貝所需內容。 保持快速查看開啟，使用方向鍵在檔案之間切換。
-
-<p align="center"><img src="../screenshots/quicklook.webp" alt="主視窗上方的快速查看，顯示資料夾內容並預覽 Markdown 檔案" width="820"></p>
+按**空白鍵**，使用 macOS 快速查看預覽所選項目。檢閱器也提供各種檔案格式的專用預覽。
 
 | 格式 | 可用功能 |
 |---|---|
@@ -68,11 +66,11 @@ Finder 原本夠用，直到你需要尋找檔案、查明磁碟被什麼佔滿�
 | **Jupyter 筆記本 (`.ipynb`)** | 在同一個檢視中閱讀 Markdown、程式碼儲存格和已儲存的輸出。 |
 | **程式碼與設定** | 為 Swift、Python、JavaScript、TypeScript、Rust、Go、C/C++、Shell 指令稿、YAML、TOML、XML、Dockerfile 等提供語法醒目提示、行號、尋找和自動換行。 |
 | **JSON** | 無需開啟編輯器即可閱讀格式化的 JSON、JSONC 和 JSON5。 |
-| **JSON Lines、HAR 和 Xcode 目錄** | 在 `.jsonl`、`.ndjson`、`.har` 和 `.xcstrings` 檔案中搜尋資料列。 |
-| **字幕 (`.srt`, `.vtt`)** | 在可搜尋的表格中查看字幕和時間戳記。 |
+| **JSON Lines、HAR 和 Xcode 目錄** | 瀏覽 `.jsonl`、`.ndjson`、`.har` 和 `.xcstrings` 檔案中的資料列。 |
+| **字幕 (`.srt`, `.vtt`)** | 在表格中查看字幕和時間戳記。 |
 | **HTML** | 在轉譯後的頁面與原始碼之間切換。 |
-| **CSV、TSV 和 PSV** | 逐頁瀏覽資料，排序欄位，尋找數值，並拷貝個別儲存格或矩形範圍。 |
-| **SQLite** | 選擇資料表或檢視表，逐頁瀏覽資料列，排序、尋找並拷貝儲存格。 |
+| **CSV、TSV 和 PSV** | 逐頁瀏覽資料，排序欄位，並拷貝個別儲存格或矩形範圍。 |
+| **SQLite** | 選擇資料表或檢視表，逐頁瀏覽資料列，排序並拷貝儲存格。 |
 | **Excel 和 OpenDocument (`.xlsx`, `.ods`)** | 切換工作表，使用相同的表格操作查看已儲存的值。 |
 | **Parquet** | 查看檔案結構、欄位類型和資料列數。 |
 | **NumPy 與 AI 模型** | 查看 NumPy (`.npy`)、SafeTensors 和 GGUF 檔案中的陣列形狀與張量詳細資訊。 |
@@ -81,47 +79,34 @@ Finder 原本夠用，直到你需要尋找檔案、查明磁碟被什麼佔滿�
 | **路線 (`.gpx`, `.kml`, `.geojson`)** | 在地圖上瀏覽路線，並查看距離和海拔詳細資訊。 |
 | **憑證與描述檔** | 查看 `.cer`、`.crt`、`.der`、`.pem`、`.mobileprovision` 和 `.provisionprofile` 檔案中的身分、有效期限和簽章詳細資訊。 |
 | **STL 和 3MF 模型** | 旋轉和縮放 3D 模型，查看三角形數量與尺寸。 |
-| **EPUB 與漫畫** | 閱讀 EPUB、CBZ、CBR、CB7 和 CBT 檔案中的書籍章節與漫畫頁面。 |
+| **EPUB 與漫畫** | 閱讀 EPUB 章節，瀏覽漫畫封存檔。 |
 | **OneNote** | 瀏覽筆記本目錄，閱讀節的頁面（`.one`、`.onetoc2`），或查看封裝的筆記本（`.onepkg`）。 |
-| **封存檔與套件** | 瀏覽 ZIP、7z、RAR、TAR、ISO 和 CAB，以及 JAR、APK、IPA、WHL 等套件。預覽或拷貝其中的個別檔案。 |
+| **封存檔與套件** | 列出 ZIP、7z、RAR、TAR、ISO 和 CAB 封存檔，以及 JAR、APK、IPA、WHL 等套件的內容。 |
 
-PDF 支援選取和拷貝文字。照片、音訊和影片提供原生預覽，包括影片分鏡和音訊波形。其他格式使用 macOS 快速查看。檢閱器中也能預覽檔案。
+檢閱器支援在 PDF 預覽中選取與拷貝文字，並顯示影片分鏡和音訊波形。
 
 ## 五種顯示方式。兩個窗格。
 
-圖像、列表、直欄、圖庫與磁碟使用量，一個快速鍵就能切換（⌘1–⌘5，順序與 Finder 相同）。在列表與直欄中，可用 ⌘+ 和 ⌘− 調整文字大小。開啟 **雙窗格**，並排處理兩個檔案夾，用快速鍵在兩側拷貝或搬移，也能比較與同步。
+圖像、列表、直欄、圖庫與磁碟使用量，一個快速鍵就能切換（⌃⌘1–⌃⌘5，順序與 Finder 相同）。在列表與直欄中，可用 ⌘+ 和 ⌘− 調整文字大小。開啟 **雙窗格**，並排處理兩個檔案夾，用快速鍵在兩側拷貝或搬移，也能比較與同步。
 
 <table>
   <tr>
-    <td><strong>圖像 · ⌘1</strong><br><img src="../screenshots/grid.webp" alt="顯示影像縮圖的圖像顯示方式"></td>
-    <td><strong>列表 · ⌘2</strong><br><img src="../screenshots/list.webp" alt="列表顯示方式，即時顯示檔案夾大小"></td>
+    <td><strong>圖像 · ⌃⌘1</strong><br><img src="../screenshots/grid.webp" alt="顯示影像縮圖的圖像顯示方式"></td>
+    <td><strong>列表 · ⌃⌘2</strong><br><img src="../screenshots/list.webp" alt="列表顯示方式，即時顯示檔案夾大小"></td>
   </tr>
   <tr>
-    <td><strong>直欄 · ⌘3</strong><br><img src="../screenshots/columns.webp" alt="開啟多層資料夾並預覽影像的直欄顯示方式"></td>
-    <td><strong>圖庫 · ⌘4</strong><br><img src="../screenshots/gallery.webp" alt="圖庫顯示方式，提供大型照片預覽與縮圖列"></td>
+    <td><strong>直欄 · ⌃⌘3</strong><br><img src="../screenshots/columns.webp" alt="開啟多層資料夾並預覽影像的直欄顯示方式"></td>
+    <td><strong>圖庫 · ⌃⌘4</strong><br><img src="../screenshots/gallery.webp" alt="圖庫顯示方式，提供大型照片預覽與縮圖列"></td>
   </tr>
   <tr>
-    <td><strong>磁碟使用量 · ⌘5</strong><br><img src="../screenshots/disk-usage.webp" alt="依大小呈現檔案夾的磁碟使用量地圖"></td>
+    <td><strong>磁碟使用量 · ⌃⌘5</strong><br><img src="../screenshots/disk-usage.webp" alt="依大小呈現檔案夾的磁碟使用量地圖"></td>
     <td><strong>雙窗格 · ⌘\</strong><br><img src="../screenshots/dual.webp" alt="雙窗格，並排顯示專案檔案和照片"></td>
   </tr>
 </table>
 
-## 你的配色，熟悉的 Mac。
-
-<p align="center"><img src="../screenshots/appearance.webp" alt="外觀設定，顯示顏色主題與「系統」選項" width="632"></p>
-
-選擇 **系統** 保留 Mac 原有配色，或從十七種主題中挑選：**石墨、藍色、綠色、紫色、沙色、藍綠色、玫瑰色、琥珀色、岩灰、鼠尾草綠、珊瑚、梅紫、冰藍、午夜、Catppuccin、Dracula 與 Tokyo Night**。每種主題都有淺色與深色配色，協調套用到檔案顯示方式、側邊欄、檢閱器、工具列與輔助視窗。macOS 原生控制項和熟悉的操作方式維持不變。
-
-在 **設定 ▸ 外觀 ▸ 顏色主題** 中選擇。關閉 **視窗色調**，就能保留原生背景，只在所選區域與強調色中使用主題。也可調整列間密度與檔案名稱的文字大小。
-
-想用自己的配色？把主題 JSON 檔案放進 `~/Library/Application Support/Strata/Themes/`，然後在設定中選擇它。想貢獻它的話，加入該檔案和名稱的翻譯，再重新建置即可，不必修改 Swift 程式碼。[主題指南](../themes.md)介紹檔案格式，以及淺色、深色和輔助使用的檢查要求。
-
 ## 為開發者準備
 
-### 程式碼儲存庫
-
-- **Git 狀態一目了然。** 每個檔案旁顯示狀態，路徑列顯示目前分支。
-- **專案工具就在檢閱器中。** Strata 識別 Node、Rust、Swift、.NET、Python、Go 等專案。執行專案腳本，或清理 `node_modules` 等建置檔案夾以釋出空間；清理會將它們移到垃圾桶。
+- **專案工具就在檢閱器中。** Strata 識別 Node、Rust、Swift、.NET、Python、Go 等專案。 你可以執行專案腳本，並查看 `node_modules` 等建置資料夾所占用的空間。
 - **檔案旁就能預覽。** 在檢閱器中閱讀程式碼、Markdown、HTML、JSON、CSV、SQLite 資料庫與壓縮檔。
 
 ### 伺服器
@@ -140,13 +125,6 @@ PDF 支援選取和拷貝文字。照片、音訊和影片提供原生預覽，�
 - **就地管理容器。** 透過快速鍵選單或檢閱器啟動、停止、重新啟動或暫停容器，查看映像檔、連接埠、掛載點與 Compose 服務。
 - **控制 Compose 堆疊。** 一起啟動、停止或重新啟動專案中的容器，並在終端機或程式碼編輯器中打開專案。
 
-<table>
-  <tr>
-    <td><img src="../screenshots/devmode.png" alt="Git 標記、分支標籤與程式碼預覽"></td>
-    <td><img src="../screenshots/project.png" alt="專案檢閱器顯示建置產物與腳本"></td>
-  </tr>
-</table>
-
 ## 你期待的其他功能，也都用心做好
 
 | | |
@@ -154,14 +132,12 @@ PDF 支援選取和拷貝文字。照片、音訊和影片提供原生預覽，�
 | **垃圾桶** | 如同 Finder，可在側邊欄中操作：還原（也支援經 Finder 移到垃圾桶的項目）、立即刪除與清空垃圾桶，並統計其他磁碟上的垃圾桶。 |
 | **封存檔** | 安全地壓縮與解壓縮 zip、tar、7z、rar 等格式：檔案不會超出目標檔案夾，下載的檔案會保留隔離屬性。也可按兩下 zip，像檔案夾一樣瀏覽並拷貝內容。 |
 | **標籤** | 隨處可用的 Finder 標籤：彩色圓點、快速鍵選單的顏色列、檢閱器的標籤欄位、側邊欄的標籤區，以及搜尋中的 `tag:`。 |
-| **書籍與漫畫** | 顯示 EPUB、CBZ、CBR、CB7 和 CBT 的封面縮圖。按空白鍵瀏覽漫畫頁面，在快速查看或檢閱器中閱讀 EPUB 章節，並使用 `kind:book` 或 `kind:comic` 搜尋。 |
 | **批次重新命名** | 取代文字或規則運算式、加入文字、依格式編號或更改大小寫。結果即時預覽，一步就能還原。 |
 | **取得資訊** | 直接在檢閱器中編輯註解、打開檔案的 App、鎖定狀態與權限。 |
-| **App 更新** | 在 App 上按右鍵，選擇「檢查更新⋯」，就能從 App 自己的更新來源或 App Store 確認是否有新版本。 |
 | **網路共享** | 使用 macOS 原生登入與鑰匙圈連接 SMB、AFP、NFS 和 WebDAV 共享（⌥⌘K）。SFTP 伺服器與 S3 儲存貯體見上文。 |
 | **雲端檔案夾** | 查看哪些檔案只存於 iCloud Drive 或其他雲端檔案夾，並使用「立即下載」與「移除下載」。 |
 | **比較與同步** | 比較兩個窗格的檔案夾，進行雙向、單向或鏡像同步，支援驗證與還原。 |
-| **你的快速鍵，你的外觀** | 在設定中更改任何選單快速鍵，選擇淺色或深色模式下的顏色主題，調整列間密度與檔案名稱的文字大小。 |
+| **你的快速鍵，你的外觀** | 在設定中變更任意選單快速鍵。外觀可跟隨系統，也可選用淺色或深色。還可調整列間距與檔案名稱的文字大小。 |
 | **拷貝佇列** | 大型拷貝會在背景進行，可暫停、繼續或取消。衝突會事先顯示，支援並排比較、文字差異與檔案夾合併。在設定中開啟 **驗證拷貝**，確認每個位元組都已正確抵達。跨磁碟搬移時，若原始檔案在拷貝過程中變更，會保留原始檔案。 |
 | **記錄** | 重新命名、搬移、拷貝和刪除都會留下記錄。只要項目仍在操作後留下的位置，即使幾天後或重新啟動後也能還原。 |
 | **最近使用** | 集中顯示個人專屬檔案夾中最近 7 天修改過的檔案。 |
@@ -181,7 +157,7 @@ PDF 支援選取和拷貝文字。照片、音訊和影片提供原生預覽，�
 
 ## 隱私融入設計
 
-Strata 完全在你的 Mac 上執行。搜尋索引、摘要與 AI 功能都在本機處理：不需帳號、沒有追蹤、不用雲端。檔案索引、內容索引與記錄在磁碟上加密，金鑰存於鑰匙圈。瀏覽檔案夾也不會執行其中的程式碼：Strata 會停用下載的儲存庫可能藉以執行程式碼的 Git 功能。只有檢查更新（經你允許檢查自身更新，或應你的要求檢查其他 App 的更新）及連接你指定的伺服器時才會連線。容器與伺服器的檔案會在瀏覽時視需要讀取，結束 Strata 後清除本機副本；SFTP 使用你自己的 SSH 環境，S3 秘密存取金鑰則留在鑰匙圈中。
+Strata 完全在你的 Mac 上執行。搜尋、摘要與 AI 功能都在本機處理：不需帳號、沒有追蹤、不用雲端。操作記錄在磁碟上加密，金鑰存於鑰匙圈。Strata 會連線至你加入的伺服器。容器與伺服器的檔案會在瀏覽時視需要讀取，結束 Strata 後清除本機副本；SFTP 使用你自己的 SSH 環境，S3 秘密存取金鑰則留在鑰匙圈中。
 
 關於本機資料、儲存、權限、網路連線及可用控制項的詳情，請閱讀 [Strata App 隱私權政策](https://stratafiles.app/zh-hant/privacy/)。
 
@@ -195,7 +171,7 @@ README 的譯文以這份英文原稿為來源，從翻譯目錄產生。請參�
 
 ## 取得 Strata
 
-從 [GitHub Releases](https://github.com/cristipufu/strata-files/releases/latest) 下載最新版，打開磁碟映像檔，將 Strata 拖入「應用程式」。需要配備 Apple silicon 且執行 **macOS 26** 的 Mac。發佈版本都經過簽署與 Apple 公證，可像一般 App 一樣打開。透過 **Strata ▸ 檢查更新⋯** 或經你允許自動更新；安裝前會檢查更新的簽章。
+從 [GitHub Releases](https://github.com/cristipufu/strata-files/releases/latest) 下載最新版，打開磁碟映像檔，將 Strata 拖入「應用程式」。需要配備 Apple silicon 且執行 **macOS 26** 的 Mac。發佈版本都經過簽署與 Apple 公證，可像一般 App 一樣打開。
 
 Homebrew:
 
@@ -215,7 +191,7 @@ scripts/build.sh release --open
 
 ## 發佈版本
 
-推送版本標籤後，[Release 工作流程](../../.github/workflows/release.yml) 會在 Mac 上建置 Strata，使用 Developer ID 憑證簽署，交由 Apple 公證，再發佈 GitHub Release，包含 `Strata.dmg`、`Strata.zip`、檢查碼與 `appcast.xml`，也就是已安裝副本檢查的已簽署更新來源。若有 `docs/release-notes/<version>.md`，會用作版本說明，並顯示在更新視窗中。
+推送版本標籤後，[Release 工作流程](../../.github/workflows/release.yml) 會在 Mac 上建置 Strata，使用 Developer ID 憑證簽署，交由 Apple 公證，再發佈 GitHub Release，包含 `Strata.dmg`、`Strata.zip` 與檢查碼。若有 `docs/release-notes/<version>.md`，會用作版本說明。
 
 ```sh
 git tag v0.2.0 && git push origin v0.2.0

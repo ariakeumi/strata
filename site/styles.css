@@ -581,10 +581,3 @@ h1, h2, h3 { overflow-wrap: anywhere; hyphens: auto; }
 @media (max-width: 640px) {
   .release-card { padding: 22px 18px; }
 }
-
-/* The portrait settings capture stays at its native size beside the appearance copy. */
-.themes__text { max-width: 480px; }
-.themes__shot { width: 100%; max-width: 632px; justify-self: center; }
-@media (max-width: 980px) {
-  .themes__text { max-width: 640px; justify-self: center; text-align: center; }
-}

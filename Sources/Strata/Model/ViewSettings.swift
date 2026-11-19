@@ -11,9 +11,6 @@ extension Notification.Name {
     package static let previewWrappingChanged = Notification.Name("StrataPreviewWrappingChanged")
 }
 
-/// Space previews of a folder: as a list or as icons.
-package enum PreviewViewMode: Int { case list, icons }
-
 package enum FolderIconInfo: String, CaseIterable {
     case itemCount, size
 }

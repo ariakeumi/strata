@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 import Testing
 @testable import Strata
 @testable import StrataAI
@@ -62,7 +61,7 @@ extension ColorThemeTests {
         #expect(discarded == nil, "Theme bindings must not retain closed windows or removed columns.")
     }
 
-    @Test func presetSurfacesAreOpaqueAdaptiveAndKeepTextReadable() throws {
+    @Test func tintedSurfacesAreOpaqueAdaptiveAndKeepTextReadable() throws {
         for name in [NSAppearance.Name.aqua, .darkAqua] {
             let appearance = try #require(NSAppearance(named: name))
             for palette in ColorTheme.allCases where palette != .system {
@@ -171,40 +170,6 @@ extension ColorThemeTests {
         #expect(first.browser.outlineView.tableColumns.map(\.title) == titles)
         #expect(first.browser.outlineView.sortDescriptors == sorts)
         #expect(tree.snapshot() == ["Photos/", "Projects/", "notes.zip", "report.zip"])
-    }
-
-    @Test func presetCardsRenderBothAppearancesWithoutOpeningAWindow() throws {
-        var captureFolder: URL?
-        if ProcessInfo.processInfo.environment["STRATA_CAPTURE_THEME_PREVIEWS"] == "1" {
-            let folder = FileManager.default.temporaryDirectory.appendingPathComponent("StrataThemePreview-\(UUID().uuidString)")
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            captureFolder = folder
-            print("Theme previews: \(folder.path)")
-        }
-        for scheme in [ColorScheme.light, .dark] {
-            let preview = VStack(spacing: 20) {
-                ForEach(0..<((ColorTheme.allCases.count + 2) / 3), id: \.self) { row in
-                    HStack(spacing: 20) {
-                        ForEach(Array(ColorTheme.allCases[(row * 3)..<min(row * 3 + 3, ColorTheme.allCases.count)]), id: \.self) { palette in
-                            ThemePreview(palette: palette, selected: true, options: ColorThemeOptions(palette: palette))
-                                .frame(width: 200)
-                        }
-                    }
-                }
-            }
-            .padding(24)
-            .background(scheme == .dark ? Color(white: 0.12) : Color(white: 0.96))
-            .environment(\.colorScheme, scheme)
-            let renderer = ImageRenderer(content: preview)
-            renderer.scale = 2
-            let image = try #require(renderer.cgImage)
-            #expect(image.width > 1000 && image.height > 500)
-            if let captureFolder {
-                let bitmap = NSBitmapImageRep(cgImage: image)
-                let data = try #require(bitmap.representation(using: .png, properties: [:]))
-                try data.write(to: captureFolder.appendingPathComponent("presets-\(scheme).png"))
-            }
-        }
     }
 }
 

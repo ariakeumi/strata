@@ -15,6 +15,8 @@ extension Notification.Name {
         package var folders: Set<String> = []
         package var missing: Set<String> = []
         package var names: [String: String] = [:]
+
+        package var sidebarLocationVolumes: [Place] { volumes.filter { !$0.isSMB } }
     }
 
     package private(set) var snapshot = Snapshot()
@@ -66,7 +68,7 @@ extension Notification.Name {
             readAgain = true
             return
         }
-        let paths = (preferences.favoritePaths ?? []) + Places.defaultCandidates.map(\.path)
+        let paths = (preferences.favoritePaths ?? []) + preferences.sidebarGroups.flatMap(\.folderPaths) + Places.defaultCandidates.map(\.path)
             + visits.ranked().prefix(400).map(\.path)
         let read = read
         task = Task { [weak self] in

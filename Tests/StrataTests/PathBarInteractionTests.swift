@@ -144,21 +144,6 @@ import Testing
         }
     }
 
-    @Test func theBranchBadgeDoesNotRestoreAnOldHoverAfterBeingHidden() throws {
-        let environment = try IndependentEnvironment()
-        let badge = GitBranchPill(clipboard: environment.services.clipboard)
-        badge.model = .init(branch: "main")
-        let window = try host(badge)
-        defer { window.contentView = nil }
-        let normal = try background(of: badge)
-        let event = try enterEvent(window)
-        badge.mouseEntered(with: event)
-        #expect(try background(of: badge) != normal)
-        badge.isHidden = true
-        badge.isHidden = false
-        #expect(try background(of: badge) == normal)
-    }
-
     @Test(arguments: [nil as String?, "house.fill", "magnifyingglass"])
     func paddedBreadcrumbsKeepTheirFullClickAreaAndNativeAccessibility(_ symbol: String?) throws {
         let button = CrumbButton(title: "chat-design-previews", symbol: symbol, emphasized: true)

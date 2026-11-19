@@ -292,7 +292,7 @@ final class ColumnBrowserViewController: NSViewController, FileCollectionControl
         guard let index = panes.firstIndex(where: { $0 === pane }) else { return }
         activeIndex = index
         let selected = pane.selectedEntries
-        if selected.count == 1, let entry = selected.first, entry.isFolder {
+        if selected.count == 1, let entry = selected.first, entry.isFolder, entry.url.isFileURL {
             if panes.count > index + 1, panes[index + 1].folder.fileViewKey == entry.url.fileViewKey {
                 removeColumns(after: index + 1)
             } else {
@@ -303,7 +303,7 @@ final class ColumnBrowserViewController: NSViewController, FileCollectionControl
             }
         } else {
             removeColumns(after: index)
-            if selected.count == 1, let entry = selected.first {
+            if selected.count == 1, let entry = selected.first, entry.url.isFileURL {
                 let preview = ColumnPreviewPane(thumbnails: thumbnails, itemInfo: itemInfo)
                 strip.addSubview(preview)
                 self.preview = preview
@@ -354,6 +354,7 @@ final class ColumnBrowserViewController: NSViewController, FileCollectionControl
     }
 
     func moveRight(from pane: ColumnPane) {
+        if !pane.folder.isFileURL { open(from: pane); return }
         guard let index = panes.firstIndex(where: { $0 === pane }), panes.count > index + 1 else { return }
         let next = panes[index + 1]
         if !next.isLoaded {
@@ -394,7 +395,7 @@ final class ColumnBrowserViewController: NSViewController, FileCollectionControl
         let entries = pane.selectedEntries
         guard !entries.isEmpty else { return }
         // Folders are already open in the next column; only files (and packages) open.
-        let files = entries.filter { !$0.isFolder }
+        let files = entries.filter { !$0.isFolder || !$0.url.isFileURL }
         if !files.isEmpty { fileDelegate?.fileView(self, open: files) }
     }
 
@@ -461,7 +462,7 @@ final class ColumnBrowserViewController: NSViewController, FileCollectionControl
         refreshVisibleRows()
     }
 
-    /// Re-reads what visible rows show (clipboard dimming, git badges, fetched thumbnails and previews).
+    /// Re-reads what visible rows show (clipboard dimming, fetched thumbnails and previews).
     func refreshVisibleRows(paths: Set<String>? = nil) {
         for pane in panes { pane.refreshVisibleRows(paths: paths) }
         if let preview, let entry = preview.entry, paths?.contains(entry.url.path) != false { preview.show(entry) }

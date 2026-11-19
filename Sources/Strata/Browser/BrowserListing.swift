@@ -7,9 +7,6 @@ final class FileNode {
     weak var parent: FileNode?
     var children: [FileNode]?
     var matchIndices: [Int] = []
-    /// Set on header rows that group other rows (duplicate sets); they aren't files themselves.
-    var groupTitle: String?
-    var groupDetail: String?
 
     init(entry: FileEntry, parent: FileNode? = nil) {
         self.entry = entry
@@ -17,13 +14,6 @@ final class FileNode {
     }
 
     var url: URL { entry.url }
-}
-
-/// A named section of files in grouped results (such as a duplicate set).
-struct ResultGroup {
-    let title: String
-    let detail: String
-    let entries: [FileEntry]
 }
 
 /// Owns the browser's entries, filtered rows and path lookup together. AppKit owns selection and expansion;
@@ -37,7 +27,7 @@ final class BrowserListing {
     /// Folder URLs may have a trailing slash; commands and restored selections may omit it.
     private var nodesByPath: [String: FileNode] = [:]
 
-    static func key(_ url: URL) -> String { PathSpelling.short(url) }
+    static func key(_ url: URL) -> String { url.isFileURL ? PathSpelling.short(url) : url.absoluteString }
 
     func node(for url: URL) -> FileNode? { nodesByPath[Self.key(url)] }
     func node(forKey key: String) -> FileNode? { nodesByPath[key] }
@@ -81,29 +71,11 @@ final class BrowserListing {
         rebuildIndex()
     }
 
-    func replaceGroups(_ groups: [ResultGroup]) {
-        generation += 1
-        nodes = groups.compactMap { group in
-            guard let first = group.entries.first else { return nil }
-            let header = FileNode(entry: first)
-            header.groupTitle = group.title
-            header.groupDetail = group.detail
-            header.children = group.entries.map { FileNode(entry: $0, parent: header) }
-            return header
-        }
-        rebuildIndex()
-        applyFilter()
-    }
-
-    func replaceGroups(_ groups: [(title: String, detail: String, entries: [FileEntry])]) {
-        replaceGroups(groups.map { ResultGroup(title: $0.title, detail: $0.detail, entries: $0.entries) })
-    }
-
     /// Returns changed nodes, or nil when a full replacement is needed. Validate the whole set before mutating:
     /// a missing file, duplicate path or changed sorted value must not leave a partially updated listing.
     func updateResults(_ entries: [FileEntry], sorted: Bool) -> [FileNode]? {
         guard nodesByPath.count == nodes.count else { return nil }
-        guard entries.count == nodes.count, nodes.allSatisfy({ $0.groupTitle == nil && $0.children == nil }) else { return nil }
+        guard entries.count == nodes.count, nodes.allSatisfy({ $0.children == nil }) else { return nil }
         var byPath: [String: FileEntry] = [:]
         byPath.reserveCapacity(entries.count)
         for entry in entries { byPath[entry.locationKey] = entry }
@@ -192,7 +164,7 @@ final class BrowserListing {
         nodesByPath.removeAll(keepingCapacity: true)
         var stack = nodes
         while let node = stack.popLast() {
-            if node.groupTitle == nil { nodesByPath[node.entry.locationKey] = node }
+            nodesByPath[node.entry.locationKey] = node
             if let children = node.children { stack.append(contentsOf: children) }
         }
     }

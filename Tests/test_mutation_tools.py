@@ -51,14 +51,14 @@ class MutationRunnerTests(unittest.TestCase):
 
     def test_workflow_rules_allow_empty_input_and_command_line_overrides(self):
         count = len(json.loads((ROOT / "Tests" / "mutations.json").read_text()))
-        for rules, arguments, expected in [("", [], count), (" \t ", [], count), ("fsmonitor", [], 1),
-                                            ("Extraction", ["fsmonitor"], 1)]:
+        for rules, arguments, expected in [("", [], count), (" \t ", [], count), ("allocated", [], 1),
+                                            ("Extraction", ["allocated"], 1)]:
             with self.subTest(rules=rules, arguments=arguments):
                 run = subprocess.run([sys.executable, str(ROOT / "scripts" / "mutate.py"), "--list"] + arguments,
                                      env=dict(os.environ, STRATA_MUTATION_RULES=rules), capture_output=True, text=True, check=True)
                 self.assertEqual(len(run.stdout.splitlines()), expected)
                 if expected == 1:
-                    self.assertIn("fsmonitor", run.stdout)
+                    self.assertIn("allocated", run.stdout)
 
     def test_no_tests_is_not_a_surviving_mutation(self):
         run = subprocess.CompletedProcess([], 0, "✔ Test run with 0 tests in 0 suites passed", "")

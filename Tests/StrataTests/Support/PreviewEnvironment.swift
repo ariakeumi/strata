@@ -44,7 +44,6 @@ final class PreviewEnvironment {
     }
 
     isolated deinit {
-        services.previews.close()
         pasteboard.releaseGlobally()
     }
 }

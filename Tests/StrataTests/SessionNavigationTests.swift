@@ -41,7 +41,7 @@ struct SessionNavigationTests {
         for pane in owner.panes { await pane.browser.directoryReads.task?.value }
         for (index, side) in ["left", "right"].enumerated() {
             owner.panes[index].history.back = [.recents, .folder(tree.url(side + "/previous"))]
-            owner.panes[index].history.forward = [.duplicates, .folder(tree.url(side + "/next"))]
+            owner.panes[index].history.forward = [.search("notes", scope: tree.url(side)), .folder(tree.url(side + "/next"))]
         }
         owner.window?.makeFirstResponder(owner.panes[1].browser.focusView)
         let named = Workspaces.workspace(named: "Named", of: [owner])
@@ -202,14 +202,14 @@ struct SessionNavigationTests {
         let encoded = try JSONEncoder().encode(SavedNavigation(back: source, forward: source))
         let restored = try JSONDecoder().decode(SavedNavigation.self, from: encoded)
         #expect(restored.back.count == SavedNavigation.limit && restored.forward.count == SavedNavigation.limit)
-        for bad in [SavedDestination(kind: "unknown"), SavedDestination(kind: "folder", path: "relative"),
+        for bad in [SavedDestination(kind: "unknown"), SavedDestination(kind: "duplicates"), SavedDestination(kind: "folder", path: "relative"),
                     SavedDestination(kind: "folder", path: "/nul\0path"), SavedDestination(kind: "folder", path: "/" + String(repeating: "x", count: 4096)),
                     SavedDestination(kind: "search", path: "relative", query: "invoice"),
                     SavedDestination(kind: "search", server: UUID().uuidString, query: "invoice"),
                     SavedDestination(kind: "search", query: String(repeating: "x", count: 8193))] {
             #expect(bad.destination(services: environment.services) == nil)
         }
-        #expect(SavedDestination(kind: "search", query: "invoice").destination(services: environment.services) == .search("invoice", scope: nil))
+        #expect(SavedDestination(kind: "search", query: "invoice").destination(services: environment.services) == nil)
         withExtendedLifetime((environment, state)) {}
     }
 }

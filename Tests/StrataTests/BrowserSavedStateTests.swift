@@ -147,9 +147,9 @@ struct BrowserSavedStateTests {
         window.focusOtherPane(nil)
         window.destination = .search("case:report", scope: tree.url("right"))
         save()
-        window.destination = .search("case:report", scope: nil)
+        window.destination = .search("case:report", scope: tree.root)
         save()
-        let expected = [tree.url("left").path, tree.url("right").path, nil].map {
+        let expected = [tree.url("left").path, tree.url("right").path, tree.root.path].map {
             SavedSearch(name: "case:report", query: "case:report", scopePath: $0)
         }
         #expect(a.services.savedSearches.all == expected)

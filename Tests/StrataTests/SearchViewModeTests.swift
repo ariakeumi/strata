@@ -57,11 +57,11 @@ struct SearchViewModeTests {
             controller.browser.setMode(mode, remember: false)
             controller.syncViewModeItem()
             checkControls(controller, item, results: false)
-            for kind in 0..<3 {
-                switch kind {
-                case 0: controller.browser.showResults(entries, total: entries.count)
-                case 1: controller.browser.showMessage(symbol: "magnifyingglass", title: "Searching")
-                default: controller.browser.showGroups([(title: "Duplicates", detail: "", entries: entries)], summary: "Duplicates")
+            for showingMessage in [false, true] {
+                if showingMessage {
+                    controller.browser.showMessage(symbol: "magnifyingglass", title: "Searching")
+                } else {
+                    controller.browser.showResults(entries, total: entries.count)
                 }
                 checkControls(controller, item, results: true)
                 let previous = controller.browser.effectiveMode

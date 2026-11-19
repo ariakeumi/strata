@@ -5,8 +5,8 @@ order. New Folder, New File, Move to Trash, Copy To, Move To, Sync, Connect, Ope
 Hidden Files and Command Palette are optional. Sync opens Compare with Other Pane so you can review differences before
 syncing. The Hidden Files button says what a click does (Show or Hide Hidden Files) and shows an open eye while
 they're shown.
-The default set is unchanged; dragging the default set from the native palette restores it.
-Reload appears only when added through customization, and is disabled in search results, Recents and Duplicates.
+Drag the default set from the native palette to restore it. Use View → Toggle Sidebar or ⌃⌘S to show or hide the sidebar.
+Reload appears only when added through customization. In search results, it searches the same folder again.
 
 AppKit owns buttons, overflow, labels, spacing and the customization palette. Layout and display mode persist in
 `Prefs` through observable public toolbar properties, with native automatic saving disabled. Toolbar identifiers

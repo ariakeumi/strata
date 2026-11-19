@@ -20,6 +20,7 @@ extension BrowserWindowController {
         let controller = ConnectToServerController(editing: server, settings: services.connectionSettings,
                                                    mounts: ServerMountSession(mounter: .live),
                                                    connections: services.remote.connections)
+        controller.onManageSMB = { [show = services.showSetting] in show(.smbConnections) }
         controller.onConnected = { [weak self, weak origin] mounted in
             guard let self, !isClosed, let origin, panes.contains(where: { $0 === origin }) else { return }
             go(.folder(mounted.lexicallyStandardized), in: origin)
@@ -50,5 +51,114 @@ extension BrowserWindowController {
     /// Ends the connection to `server` and forgets its files here; panes showing them go home.
     func disconnectServer(_ server: RemoteServer) {
         services.remote.connections.disconnect(server)
+    }
+
+    @discardableResult
+    func openSMB(_ id: UUID) -> Task<Void, Never>? {
+        let connections = services.smb
+        guard !isClosed, let profile = connections.profile(id) else { return nil }
+        if profile.browsesShares {
+            let origin = pane
+            go(.smb(id, title: profile.title), in: origin)
+            return origin.opening.task
+        }
+        return mountSMB(in: pane, name: profile.title) { try await connections.connect(profile) }
+    }
+
+    func showSMBShares(_ id: UUID, in origin: Pane, login: SMBLogin? = nil) {
+        origin.opening.cancel()
+        let connections = services.smb
+        let destination = origin.destination
+        let profile = connections.profile(id).flatMap { $0.browsesShares ? $0 : nil }
+        let root = profile.flatMap { URL(string: $0.shownAddress) }
+        let shares = origin.browser.showSMBShareList(at: root) { [weak self, weak origin] in
+            guard let self, let origin, origin.destination == destination else { return }
+            showSMBShares(id, in: origin, login: login)
+            if pane === origin { focusList() }
+        }
+        guard let profile else {
+            origin.browser.emptyState.show(symbol: "network", title: String(localized: "The saved SMB connection changed. Reopen its settings and try again."))
+            if pane === origin { refreshOpeningNotice() }
+            return
+        }
+        origin.opening.open(operation: { try await connections.listShares(profile, login: login) }) {
+            [weak self, weak origin, weak shares] result in
+            guard let self, !isClosed, let origin, let shares, origin.browser.smbShares === shares,
+                  origin.destination == destination, panes.contains(where: { $0 === origin }) else { return }
+            switch result {
+            case .success(let names):
+                origin.browser.publishSMBShares(names) { [weak self, weak origin, weak shares] name in
+                    guard let self, let origin, let shares, origin.browser.smbShares === shares,
+                          connections.profile(id) == profile else { return }
+                    mountSMB(in: origin, name: name) { try await connections.connect(to: name, on: profile, login: login) }
+                }
+            case .failure(let error):
+                showSMBListingError(error, profile: profile, in: origin, shares: shares)
+            }
+        }
+        if pane === origin { refreshOpeningNotice() }
+    }
+
+    private func showSMBListingError(_ error: Error, profile: SMBProfile, in origin: Pane, shares: SMBSharePage) {
+        let listingError = error as? SMBShareListingError
+        let title = String(localized: "Couldn’t connect to “\(profile.title)”", comment: "A server's name")
+        if listingError?.requiresLogin == true, !profile.guest {
+            origin.browser.emptyState.show(symbol: "network", title: title,
+                message: listingError?.problem?.message ?? "",
+                button: (String(localized: "Connect", comment: "Button: connect to the server"), { [weak self, weak origin, weak shares] in
+                    guard let self, let origin, let shares else { return }
+                    requestSMBLogin(for: profile, in: origin, shares: shares)
+                }))
+        } else {
+            let message = (error as? ServerConnection.Problem)?.message ?? listingError?.problem?.message ?? ""
+            origin.browser.emptyState.show(symbol: "network", title: title, message: message,
+                button: (String(localized: "Try Again"), { [weak shares] in shares?.onReload() }))
+        }
+    }
+
+    private func requestSMBLogin(for profile: SMBProfile, in origin: Pane, shares: SMBSharePage) {
+        guard !isClosed, let window, window.attachedSheet == nil, origin.browser.smbShares === shares,
+              services.smb.profile(profile.id) == profile else { return }
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Connecting to “\(profile.title)”…", comment: "A server's name")
+        let user = NSTextField(string: profile.user)
+        user.placeholderString = String(localized: "User Name")
+        user.setAccessibilityLabel(user.placeholderString)
+        let password = NSSecureTextField()
+        password.placeholderString = String(localized: "Password")
+        password.setAccessibilityLabel(password.placeholderString)
+        let fields = NSStackView(views: [user, password])
+        fields.orientation = .vertical
+        fields.alignment = .leading
+        for field in [user, password] { field.widthAnchor.constraint(equalToConstant: 260).isActive = true }
+        fields.frame.size = fields.fittingSize
+        alert.accessoryView = fields
+        alert.addButton(withTitle: String(localized: "Connect", comment: "Button: connect to the server"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        alert.window.initialFirstResponder = profile.user.isEmpty ? user : password
+        alert.beginSheetModal(for: window) { [weak self, weak origin, weak shares] response in
+            guard response == .alertFirstButtonReturn, let self, !isClosed, let origin, let shares,
+                  panes.contains(where: { $0 === origin }), origin.browser.smbShares === shares,
+                  services.smb.profile(profile.id) == profile else { return }
+            let name = user.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, name.rangeOfCharacter(from: .controlCharacters) == nil, !password.stringValue.utf8.contains(0) else { return }
+            showSMBShares(profile.id, in: origin, login: SMBLogin(user: name, password: password.stringValue))
+            if pane === origin { focusList() }
+        }
+    }
+
+    @discardableResult
+    private func mountSMB(in origin: Pane, name: String,
+                          operation: @escaping @Sendable () async throws -> URL) -> Task<Void, Never> {
+        openFolder(in: origin,
+                   notice: .init(symbol: "network", text: String(localized: "Connecting to “\(name)”…", comment: "A server's name")),
+                   operation: operation) { [weak self] error in
+            guard let self, let problem = error as? ServerConnection.Problem,
+                  let window, window.attachedSheet == nil else { return }
+            let alert = NSAlert()
+            alert.messageText = String(localized: "Couldn’t connect to “\(name)”", comment: "A server's name")
+            alert.informativeText = problem.message
+            alert.beginSheetModal(for: window, completionHandler: nil)
+        }
     }
 }

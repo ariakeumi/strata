@@ -10,17 +10,14 @@ nonisolated struct PathSuggestion: Equatable, Sendable {
 }
 
 /// What the path bar suggests for what's typed: a path (`~/Doc`, `/Volumes/…`) lists the folders inside as you type; a
-/// relative one walks down from where you are and from folders you use (`github/acme`); a name alone finds folders with
-/// that name anywhere, from the index, those you open most first.
+/// relative one walks down from where you are and from folders you use (`github/acme`).
 final class PathSuggestions {
     private let preferences: Prefs
     private let places: PlaceChecks
-    private let index: FileIndex
 
-    init(preferences: Prefs, places: PlaceChecks, index: FileIndex) {
+    init(preferences: Prefs, places: PlaceChecks) {
         self.preferences = preferences
         self.places = places
-        self.index = index
     }
 
     static let limit = 12
@@ -68,7 +65,7 @@ final class PathSuggestions {
                 keep(PathSuggestion(url: hit.url, score: hit.score, matches: hit.nameMatches))
             }
         } else {
-            // A name: folders here, folders you use, then any folder on disk by that name.
+            // A name: folders here and folders you use.
             if let current {
                 for hit in await inside(current.path + "/" + typed, keepTrailingSlash: false) {
                     keep(PathSuggestion(url: hit.url, score: hit.score + 30, matches: hit.matches))
@@ -77,13 +74,6 @@ final class PathSuggestions {
             for (rank, url) in visited.enumerated() {
                 guard let match = Fuzzy.match(typed, url.lastPathComponent) else { continue }
                 keep(PathSuggestion(url: url, score: match.score + max(0, 24 - rank / 2) + 10, matches: match.indices))
-            }
-            if typed.count >= 2, let result = await index.search("kind:folder " + typed, limit: 30) {
-                for hit in result.hits where !hit.isPackage {
-                    let url = URL(fileURLWithPath: hit.path, isDirectory: true)
-                    let matches = Fuzzy.match(typed, url.lastPathComponent)?.indices ?? []
-                    keep(PathSuggestion(url: url, score: max(0, hit.score - 1000) / 2 + 8, matches: matches))
-                }
             }
         }
         return Array(found.values.sorted {

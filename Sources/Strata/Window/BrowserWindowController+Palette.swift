@@ -11,12 +11,9 @@ extension BrowserWindowController {
         palette.goToPath = { [weak self] url in self?.go(toPath: url) }
         let places = services.places
         palette.lateItems = { [weak self] query in
-            // Both at once: a folder walk on a slow disk mustn't hold up what the index finds.
-            async let found = self?.indexItems(query) ?? []
-            let rows = await PaletteItem.lookupRows(for: query, in: places) { [weak self] url, isFolder in
+            await PaletteItem.lookupRows(for: query, in: places) { [weak self] url, isFolder in
                 if isFolder { self?.navigate(to: url) } else { self?.navigate(to: url.deletingLastPathComponent(), select: url) }
             }
-            return rows + (await found)
         }
         palette.show(in: window, items: paletteItems())
     }
@@ -34,25 +31,6 @@ extension BrowserWindowController {
                 go(.folder(located), in: typedIn)
             } else {
                 go(.folder(located.deletingLastPathComponent()), in: typedIn, select: located)
-            }
-        }
-    }
-
-    /// Anything on disk, from the index (plain English understood: "pdfs from last week"); ranked below folders you use
-    /// and items in this folder.
-    private func indexItems(_ query: String) async -> [PaletteItem] {
-        guard query.count >= 2, !query.hasPrefix("/"), !query.hasPrefix("~"),
-              let result = await services.index.understand(query, limit: 30), !Task.isCancelled else { return [] }
-        let folderIcon = NSWorkspace.shared.icon(for: .folder)
-        let entries = await FileEntry.localizedNames(FileEntry.entries(from: result.hits))
-        guard !Task.isCancelled else { return [] }
-        return zip(result.hits, entries).map { hit, entry in
-            let isFolder = entry.isFolder
-            let matches = entry.nameMatch(query.split(separator: " ").first.map(String.init) ?? query)?.indices ?? []
-            return PaletteItem(title: entry.displayName, subtitle: Format.tildePath(entry.url.deletingLastPathComponent()),
-                               icon: isFolder ? folderIcon : services.thumbnails.icon(for: entry), kind: isFolder ? .folder : .match,
-                               fixedScore: max(0, hit.score - 1000) / 2 + 8, titleMatches: matches, url: entry.url) { [weak self] in
-                if isFolder { self?.navigate(to: entry.url) } else { self?.navigate(to: entry.url.deletingLastPathComponent(), select: entry.url) }
             }
         }
     }
@@ -126,13 +104,15 @@ extension BrowserWindowController {
         let folder = source.targetDirectory
         let selection = selection ?? source.selectedURLs
         let results = source.isShowingResults
+        let smbPageRevision = source.smbShares.map { _ in source.navigationRevision }
         return PaletteItem(title: title ?? item.title, subtitle: subtitle, icon: image, kind: .action,
                            shortcut: shortcut ?? command.shortcut, keywords: keywords, commandID: command.id) { [weak self, weak source] in
             guard let self, self.validateCommand(command, item: item), let target = self.commandTarget(command) else { return }
             // A palette row describes the selection it was made for. A tab/pane/folder change must not redirect it.
             if command.owner == .browser {
                 guard let source, self.browser === source, source.targetDirectory == folder, source.selectedURLs == selection,
-                      source.isShowingResults == results else { return }
+                      source.isShowingResults == results,
+                      source.smbShares.map({ _ in source.navigationRevision }) == smbPageRevision else { return }
             }
             NSApp.sendAction(command.action, to: target, from: item)
         }
@@ -195,10 +175,9 @@ extension BrowserWindowController {
         commands.add(.editTags, keywords: ["Label", "Color"])
         commands.add(.share, keywords: ["AirDrop", "Send", "Mail", "Messages"])
         commands.add(.duplicate)
-        commands.add(.renameSelection, shortcut: commands.selection.count > 1 ? nil : "↩", keywords: ["Batch", "Replace", "Number"])
+        commands.add(.renameSelection, keywords: ["Batch", "Replace", "Number"])
         commands.add(.deleteImmediately, keywords: ["Remove", "Erase"])
         commands.add(.compress, keywords: ["Zip", "Archive"])
-        commands.add(.checkAppsForUpdates, keywords: ["Update", "Upgrade", "Version", "App Store"])
         commands.add(.extract, keywords: ["Unzip", "Expand", "Decompress"])
         commands.add(.moveToTrash, keywords: ["Remove", "Erase", "Trash"])
     }
@@ -228,6 +207,7 @@ extension BrowserWindowController {
         commands.add(.goForward)
         commands.add(.goRecents)
         commands.add(.goTrash)
+        for command in StrataCommand.sidebarFolders { commands.add(command) }
         commands.add(.emptyTrash, keywords: ["Delete", "Erase"])
         commands.add(.goToFolder)
     }
@@ -251,14 +231,13 @@ extension BrowserWindowController {
         commands.add(.showShortcuts)
     }
 
-    /// The folder shown: its location, reloading and revealing it, its duplicates, the workspace it came from,
+    /// The folder shown: its location, reloading and revealing it, the workspace it came from,
     /// comparing it, and its containers.
     private func addFolderCommands(to commands: inout PaletteCommands) {
         commands.add(.editLocation)
         commands.add(.goToEnclosingFolder)
         commands.add(.reloadFolder)
         commands.add(.showInFinder)
-        commands.custom("duplicates", String(localized: "Duplicates"), "square.on.square") { [weak self] in self?.showDuplicates() }
         if let name = groupWorkspaceName, let workspace = services.workspaces.named(name) {
             commands.custom("workspace.update", String(localized: "Update “\(workspace.name)”", comment: "Window ▸ Workspaces: save this window into the workspace it was opened from"),
                             "arrow.triangle.2.circlepath", keywords: ["Workspace", "Save"]) { [weak self] in

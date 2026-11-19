@@ -22,7 +22,7 @@ struct LocalizedNamesTests {
         for _ in 0..<100 where !condition() { try await Task.sleep(for: .milliseconds(20)) }
     }
 
-    @Test func directoryListingsAndIndexResultsResolveRealLocalizedFoldersAndApps() async throws {
+    @Test func directoryListingsAndSearchResolveRealLocalizedFoldersAndApps() async throws {
         let tree = try TestTree("Original.localized/.localized/en.strings", "Original.app/Contents/Info.plist",
                                 "Original.app/Contents/Resources/en.lproj/InfoPlist.strings")
         try Data("\"Original\" = \"Translated Folder\";".utf8).write(to: tree.url("Original.localized/.localized/en.strings"))
@@ -37,12 +37,13 @@ struct LocalizedNamesTests {
         #expect(entries.first { $0.name == "Original.app" }?.displayName == "Translated App")
         let browser = BrowserViewController(services: testEnvironment.services)
         _ = browser.view
-        browser.showResults(entries.map { $0.with(displayName: $0.name) }, total: 2)
+        let search = try #require(await FolderSearch.run("Original", in: tree.root, showHidden: false))
+        #expect(search.total == 2)
+        browser.showResults(search.entries, total: search.total)
         browser.select([tree.url("Original.app")])
-        try await wait { browser.topLevelEntries.contains { $0.displayName == "Translated App" } }
         #expect(browser.topLevelEntries.contains { $0.displayName == "Translated App" })
         #expect(browser.topLevelEntries.contains { $0.displayName == "Translated Folder" })
-        #expect(browser.selectedURLs.map(\.path) == [tree.url("Original.app").path])
+        #expect(browser.selectedURLs.map(PathSpelling.short) == [PathSpelling.short(tree.url("Original.app"))])
         #expect(tree.snapshot() == ["Original.app/", "Original.app/Contents/", "Original.app/Contents/Info.plist",
             "Original.app/Contents/Resources/", "Original.app/Contents/Resources/en.lproj/",
             "Original.app/Contents/Resources/en.lproj/InfoPlist.strings", "Original.localized/",
