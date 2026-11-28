@@ -11,6 +11,73 @@ import os
 @testable import StrataSearch
 
 struct FolderNamesTests {
+    @Test func standardLocationsUseLocalizedLabelsUntilFinderNamesArrive() async throws {
+        let applications = URL(filePath: "/Applications", directoryHint: .isDirectory)
+        let applicationsWithDot = URL(filePath: "/Applications/.", directoryHint: .isDirectory)
+        let otherDocuments = URL(filePath: "/Volumes/Shared/Documents", directoryHint: .isDirectory)
+        let locations = [
+            (Places.home.appending(path: "Desktop"), String(localized: "Desktop")),
+            (Places.home.appending(path: "Documents"), String(localized: "Documents")),
+            (Places.home.appending(path: "Downloads"), String(localized: "Downloads")),
+            (applications, String(localized: "Applications")),
+        ]
+        let preferences = try Prefs.isolated()
+        let finderNames = [applications.path: "Finder Applications"]
+        let names = FolderNames { paths in finderNames.filter { paths.contains($0.key) } }
+        let checks = PlaceChecks(preferences: preferences, visits: Frecency(preferences: preferences.defaults)) { _ in
+            var snapshot = PlaceChecks.Snapshot()
+            snapshot.names = finderNames
+            return snapshot
+        }
+        func favoriteTitle(_ url: URL) -> String? {
+            Places.favorites(preferences: preferences, checks: checks).first { $0.url.path == url.path }?.title
+        }
+
+        for (url, label) in locations {
+            #expect(names.name(url) == label)
+            #expect(favoriteTitle(url) == label)
+        }
+        #expect(names.name(applicationsWithDot) == String(localized: "Applications"))
+        #expect(checks.name(applicationsWithDot) == String(localized: "Applications"))
+        #expect(names.name(otherDocuments) == "Documents")
+        #expect(checks.name(otherDocuments) == "Documents")
+
+        let announced = OSAllocatedUnfairLock(initialState: [Set<String>]())
+        let observer = NotificationCenter.default.addObserver(forName: .folderNamesRead, object: names, queue: nil) { note in
+            let paths = note.userInfo?["paths"] as? Set<String> ?? []
+            announced.withLock { $0.append(paths) }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        checks.refresh()
+        await checks.task?.value
+        await names.settled()
+        #expect(favoriteTitle(applications) == "Finder Applications")
+        #expect(names.name(applications) == "Finder Applications")
+        #expect(announced.withLock { $0 } == [[applications.path]])
+    }
+
+    @Test func picturesAndICloudUseTheirDisplayNamesBeforeTheFolderRead() throws {
+        let home = Places.home
+        let pictures = home.appending(path: "Pictures", directoryHint: .isDirectory)
+        let library = home.appending(path: "Library", directoryHint: .isDirectory)
+        let iCloud = home.appending(path: "Library/Mobile Documents/com~apple~CloudDocs", directoryHint: .isDirectory)
+        let preferences = try Prefs.isolated()
+        preferences.favoritePaths = [pictures.path, iCloud.path]
+        let checks = PlaceChecks(preferences: preferences, visits: Frecency(preferences: preferences.defaults)) { _ in
+            PlaceChecks.Snapshot()
+        }
+        let names = FolderNames { _ in [:] }
+
+        #expect(Places.favorites(preferences: preferences, checks: checks).map(\.title) ==
+                [String(localized: "Pictures"), String(localized: "iCloud Drive")])
+        #expect(names.name(pictures) == String(localized: "Pictures"))
+        #expect(names.name(library) == String(localized: "Library"))
+        #expect(names.name(iCloud) == String(localized: "iCloud Drive"))
+        let otherCloudDocs = URL(filePath: "/Volumes/Share/com~apple~CloudDocs", directoryHint: .isDirectory)
+        #expect(names.name(otherCloudDocs) == "com~apple~CloudDocs")
+        #expect(checks.name(otherCloudDocs) == "com~apple~CloudDocs")
+    }
+
     /// The path bar, the title and a pane's header name a folder by its own name until Finder's is read away from the
     /// main thread; only names other than the folders' own are announced; a folder being read isn't read again; and a
     /// read that hangs (a server that stopped answering) holds up only that server's folders, which wait for it rather

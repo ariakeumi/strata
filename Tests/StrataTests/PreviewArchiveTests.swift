@@ -185,7 +185,7 @@ struct PreviewArchiveTests {
         let info = try #require(NSDictionary(contentsOf: ArchiveWorkerApp.sources.appending(path: "StrataArchiveService/Info.plist"))
             as? [String: Any])
         #expect(info["CFBundlePackageType"] as? String == "XPC!")
-        #expect(info["CFBundleIdentifier"] as? String == "dev.strata.app.ArchiveService")
+        #expect(info["CFBundleIdentifier"] as? String == "ariakeumi.filex.ArchiveService")
         #expect(info["CFBundleExecutable"] as? String == "StrataArchiveService")
         #expect((info["XPCService"] as? [String: Any])?["ServiceType"] as? String == "Application")
         let service = try #require(NSDictionary(contentsOf: ArchiveWorkerApp.serviceEntitlements) as? [String: Bool])

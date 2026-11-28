@@ -35,12 +35,13 @@ package final class OperationLog {
         }
     }
 
-    package static let shared = OperationLog(storage: .shared, copies: .live)
+    package static let shared = OperationLog(storage: .shared, copies: .live, loadInBackground: true)
 
     package private(set) var entries: [Entry] = []
     private let file: URL
     package let storage: SecureStorage.Context
-    private let limit = 500
+    nonisolated private static let limit = 500
+    private var startup: StartupRead?
     private var undoing: Set<UUID> = []
     private var retiredTransfers: Set<UUID> = []
     package typealias Mover = ([FileOps.Move], String) async throws -> Void
@@ -52,19 +53,48 @@ package final class OperationLog {
     /// the writes under way.
     nonisolated private static let writes = DispatchQueue(label: "Strata.History.writes")
 
+    /// The initial read and all writes run in order on the same queue. An early save can therefore
+    /// include the old entries even if the main thread hasn't displayed them yet (including at quit).
+    nonisolated fileprivate final class StartupRead: Sendable {
+        let saved = Mutex<[Entry]>([])
+
+        func preceding(_ recent: [Entry]) -> [Entry] {
+            let previous = saved.withLock { $0 }
+            guard !recent.isEmpty else { return previous }
+            return previous.suffix(max(0, OperationLog.limit - recent.count)) + recent
+        }
+    }
+
+    package nonisolated struct Snapshot: Sendable {
+        fileprivate let entries: [Entry]
+        fileprivate let startup: StartupRead?
+
+        fileprivate var all: [Entry] { startup?.preceding(entries) ?? entries }
+
+        /// Put Back captures its history when invoked, including any records still being read.
+        package func loaded() async -> [Entry] {
+            if startup != nil {
+                await withCheckedContinuation { continuation in
+                    OperationLog.writes.async { continuation.resume() }
+                }
+            }
+            return all
+        }
+    }
+
     /// The entries waiting to be written, if any.
     nonisolated private final class Unsaved: Sendable {
-        private let entries = Mutex<[Entry]?>(nil)
+        private let entries = Mutex<Snapshot?>(nil)
 
         /// Keeps `latest` for the next write; true when no write is waiting already.
-        func keep(_ latest: [Entry]) -> Bool {
+        func keep(_ latest: Snapshot) -> Bool {
             entries.withLock { waiting in
                 defer { waiting = latest }
                 return waiting == nil
             }
         }
 
-        func take() -> [Entry]? {
+        func take() -> Snapshot? {
             entries.withLock { waiting in
                 defer { waiting = nil }
                 return waiting
@@ -77,16 +107,37 @@ package final class OperationLog {
     /// The environment's server and container copies: undo and redo refuse to change what's inside them.
     private let copies: CopyProviders
 
-    package init(storage: SecureStorage.Context, copies: CopyProviders, moveItems: Mover? = nil) {
+    package init(storage: SecureStorage.Context, copies: CopyProviders, loadInBackground: Bool = false, moveItems: Mover? = nil) {
         self.storage = storage
         self.copies = copies
         self.moveItems = moveItems ?? { pairs, name in
             try await FileOps.moveAsPart(pairs, copies: copies)
         }
         file = storage.url("history.sealed")
-        Self.waitForWrites()
-        entries = Self.readEntries(from: file, storage: storage)
+        if loadInBackground {
+            let read = StartupRead()
+            startup = read
+            Self.writes.async { [weak self, file] in
+                let previous = Self.readEntries(from: file, storage: storage)
+                read.saved.withLock { $0 = previous }
+                DispatchQueue.main.async { [weak self] in self?.finishLoading(read) }
+            }
+        } else {
+            Self.waitForWrites()
+            entries = Self.readEntries(from: file, storage: storage)
+        }
     }
+
+    private func finishLoading(_ read: StartupRead) {
+        guard startup === read else { return }
+        startup = nil
+        let merged = read.preceding(entries)
+        guard merged.count > entries.count else { return }
+        entries = merged
+        NotificationCenter.default.post(name: .operationLogChanged, object: self)
+    }
+
+    package func snapshot() -> Snapshot { Snapshot(entries: entries, startup: startup) }
 
     // A bad record must not hide valid neighbors. Authentication and the JSON array itself still have to be
     // intact; loading never repairs or overwrites the saved file.
@@ -320,6 +371,7 @@ package final class OperationLog {
     }
 
     package func clear() {
+        startup = nil
         entries.removeAll()
         retiredTransfers.removeAll()
         save()
@@ -327,8 +379,8 @@ package final class OperationLog {
 
     private func append(_ entry: Entry) -> UUID {
         entries.append(entry)
-        if entries.count > limit {
-            entries.removeFirst(entries.count - limit)
+        if entries.count > Self.limit {
+            entries.removeFirst(entries.count - Self.limit)
             retiredTransfers.formIntersection(Set(entries.map(\.id)))
         }
         save()
@@ -336,12 +388,12 @@ package final class OperationLog {
     }
 
     private func save() {
-        if unsaved.keep(entries) {
+        if unsaved.keep(snapshot()) {
             let unsaved = unsaved, storage = storage, file = file
             Self.writes.async {
-                guard let entries = unsaved.take() else { return }
+                guard let snapshot = unsaved.take() else { return }
                 do {
-                    try storage.write(try JSONEncoder().encode(entries), to: file)
+                    try storage.write(try JSONEncoder().encode(snapshot.all), to: file)
                 } catch {
                     // Nothing to ask anyone: what's undoable now still is; it just won't be after quitting.
                     let failure = error as NSError

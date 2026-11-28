@@ -98,6 +98,36 @@ struct SMBConnectionsTests {
         withExtendedLifetime((files, env, secondEnvironment)) {}
     }
 
+    @Test func bothSidebarsUpdateTheSMBIconWhenTheLoginModeChanges() async throws {
+        _ = NSApplication.shared
+        let env = try IndependentEnvironment()
+        let services = env.services
+        let registered = try profile("nas/Team")
+        let guest = try SMBProfile.make(id: registered.id, name: registered.name, address: registered.shownAddress,
+                                        user: "", guest: true, remembersPassword: false, connectsAtLaunch: false)
+        #expect(guest.address == registered.address)
+        try await services.smb.save(registered, replacing: nil, password: "")
+
+        let places = SidebarViewController(services: services)
+        _ = places.view
+        let tree = FolderTreeController(services: services, watchBudget: .init(limit: 0))
+        _ = tree.view
+        tree.isActive = true
+        let outline = try #require(tree.focusView as? NSOutlineView)
+
+        func expectSymbol(_ symbol: String) throws {
+            let item = try #require(places.sections.first { $0.kind == .servers }?.items.first)
+            #expect(item.symbol == symbol && item.tint == nil)
+            let nodes = (0..<outline.numberOfRows).compactMap { outline.item(atRow: $0) as? FolderNode }
+            let node = try #require(nodes.first { $0.kind == .smb(registered.id) })
+            #expect(node.symbol == symbol)
+        }
+
+        try expectSymbol("airport.extreme")
+        try await services.smb.save(guest, replacing: registered, password: "")
+        try expectSymbol("display")
+    }
+
     @Test(arguments: [false, true])
     func aMountedShareFolderCanBeDraggedIntoFavorites(ontoHeader: Bool) async throws {
         _ = NSApplication.shared

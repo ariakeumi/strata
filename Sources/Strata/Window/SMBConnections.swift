@@ -128,7 +128,7 @@ extension Notification.Name {
 final class SMBConnections: ObservableObject {
     private static let storageKey = "smbConnections"
     private let preferences: Prefs
-    private let credentials: KeychainSecrets
+    private let credentials: SMBKeychain
     private let mounter: SMBMounter
     let objectWillChange = ObservableObjectPublisher()
     var notifications: NotificationCenter { preferences.notifications }
@@ -146,7 +146,7 @@ final class SMBConnections: ObservableObject {
     }
     private var attempts: [UUID: Attempt] = [:]
 
-    init(preferences: Prefs, credentials: KeychainSecrets, mounter: SMBMounter) {
+    init(preferences: Prefs, credentials: SMBKeychain, mounter: SMBMounter) {
         self.preferences = preferences
         self.credentials = credentials
         self.mounter = mounter
@@ -223,8 +223,11 @@ final class SMBConnections: ObservableObject {
 
     @concurrent private func changePassword(for profile: SMBProfile, to password: String?) async -> Bool {
         let account = profile.credentialAccount
-        if let password { return credentials.set(password, account: account, label: "Strata SMB: \(profile.title)") }
-        return credentials.delete(account: account)
+        let credentials = credentials
+        return await OwnThread.run {
+            if let password { return credentials.set(password, account: account) }
+            return credentials.delete(account: account)
+        }
     }
 
     private static func changedProblem() -> ServerConnection.Problem {
@@ -336,16 +339,19 @@ final class SMBConnections: ObservableObject {
     }
 
     @concurrent private static func mount(_ profile: SMBProfile, interactive: Bool, mounter: SMBMounter,
-                                          credentials: KeychainSecrets) async throws -> URL {
+                                          credentials: SMBKeychain) async throws -> URL {
         let password = await password(for: profile, credentials: credentials, login: nil, interactive: interactive)
         let root = try await mount(profile.share, password: password, guest: profile.guest, interactive: interactive, mounter: mounter)
         return profile.folder(in: root)
     }
 
-    @concurrent private static func password(for profile: SMBProfile, credentials: KeychainSecrets, login: SMBLogin?,
+    @concurrent private static func password(for profile: SMBProfile, credentials: SMBKeychain, login: SMBLogin?,
                                              interactive: Bool) async -> String? {
         if let login { return login.password }
-        return profile.remembersPassword ? credentials.secret(account: profile.credentialAccount, interactive: interactive) : nil
+        guard profile.remembersPassword else { return nil }
+        return await OwnThread.runUnlessCancelled {
+            credentials.secret(account: profile.credentialAccount, interactive: interactive)
+        } ?? nil
     }
 
     @concurrent private static func mount(_ share: URL, password: String?, guest: Bool, interactive: Bool,

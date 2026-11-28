@@ -79,6 +79,7 @@ struct ViewOptionsTests {
 
     @Test func folderSizesIncludeNestedAndHiddenFilesAndDoNotWalkLinks() async throws {
         let tree = try TestTree("folder/", "folder/a", "folder/.hidden", "folder/sub/", "folder/sub/b", "link -> folder")
+        testEnvironment.preferences.automaticFolderSizes = true
         let browser = BrowserViewController(services: testEnvironment.services)
         _ = browser.view
         browser.load(tree.root)
@@ -90,6 +91,8 @@ struct ViewOptionsTests {
         for _ in 0..<100 where browser.folderSize(folder.url) == nil { try await Task.sleep(for: .milliseconds(20)) }
         let bytes = Int64("folder/a".utf8.count + "folder/.hidden".utf8.count + "folder/sub/b".utf8.count)
         #expect(browser.folderSize(folder.url)?.bytes == bytes)
+        #expect(browser.iconFolderSizeText(folder) == Format.bytes(bytes))
+        testEnvironment.preferences.automaticFolderSizes = false
         #expect(browser.iconFolderSizeText(folder) == Format.bytes(bytes))
         #expect(browser.folderSize(link.url) == nil)
         #expect(tree.snapshot() == ["folder/", "folder/.hidden", "folder/a", "folder/sub/", "folder/sub/b", "link -> folder"])

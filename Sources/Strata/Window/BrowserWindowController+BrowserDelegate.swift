@@ -82,8 +82,8 @@ extension BrowserWindowController: BrowserViewControllerDelegate {
     func browserContentDidChange(_ browser: BrowserViewController) {
         if browser === pane.browser {
             refreshPanels()
-        } else if let owner = panes.first(where: { $0.browser === browser }) {
-            owner.host.setStatus(isDualPane ? browser.statusText : nil)
+        } else if panes.contains(where: { $0.browser === browser }) {
+            refreshStatus()
         }
         updateHeaders()
     }

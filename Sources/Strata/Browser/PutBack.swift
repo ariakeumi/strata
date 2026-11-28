@@ -9,9 +9,9 @@ enum PutBack {
     @discardableResult
     static func run(_ items: [URL], services: BrowserServices, undo: UndoManager?, window: NSWindow?,
                     records: @escaping Trash.RecordReader) -> Task<Void, Never> {
-        let history = services.transfers.history.entries
+        let history = services.transfers.history.snapshot()
         return Task { [weak window] in
-            let locations = await Trash.originalLocations(of: items, history: history, records: records)
+            let locations = await Trash.originalLocations(of: items, history: await history.loaded(), records: records)
             let ready = await makeFolders(for: items, at: locations)
             if !ready.moves.isEmpty {
                 let made = CreatedFolders()

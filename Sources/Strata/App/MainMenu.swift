@@ -162,7 +162,7 @@ enum MainMenu {
     /// or it sits indented without one among those that have them.
     private static func item(_ title: String.LocalizationValue, _ action: Selector, _ key: String = "",
                              _ modifiers: NSEvent.ModifierFlags = .command, id: String? = nil, symbol: String? = nil) -> NSMenuItem {
-        let item = NSMenuItem(title: String(localized: title), action: action, keyEquivalent: key)
+        let item = NSMenuItem(title: String(localized: title).replacingOccurrences(of: "Strata", with: "FileX"), action: action, keyEquivalent: key)
         item.keyEquivalentModifierMask = modifiers
         if let id { item.identifier = NSUserInterfaceItemIdentifier(id) }
         if let symbol { item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
@@ -190,7 +190,7 @@ enum MainMenu {
     }
 
     private static func submenu(_ title: String.LocalizationValue, _ items: [NSMenuItem]) -> NSMenuItem {
-        let title = String(localized: title)
+        let title = String(localized: title).replacingOccurrences(of: "Strata", with: "FileX")
         let menu = NSMenu(title: title)
         items.forEach(menu.addItem)
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")

@@ -16,17 +16,24 @@ extension Notification.Name {
         package var missing: Set<String> = []
         package var names: [String: String] = [:]
 
-        package var sidebarLocationVolumes: [Place] { volumes.filter { !$0.isSMB } }
+        /// The startup disk can be opened before the background read knows its volume name.
+        package var sidebarVolumes: [Place] {
+            volumes.contains { $0.url.path == "/" } ? volumes : [Place.startupDiskFallback] + volumes
+        }
+
+        package var sidebarLocationVolumes: [Place] { sidebarVolumes.filter { !$0.isSMB } }
     }
+
+    package typealias Reader = ([String]) async -> Snapshot
 
     package private(set) var snapshot = Snapshot()
     private let preferences: Prefs
     private let visits: Frecency
-    private let read: ([String]) async -> Snapshot
+    private let read: Reader
     package private(set) var task: Task<Void, Never>?
     private var readAgain = false
 
-    package init(preferences: Prefs, visits: Frecency, read: @escaping ([String]) async -> Snapshot) {
+    package init(preferences: Prefs, visits: Frecency, read: @escaping Reader) {
         self.preferences = preferences
         self.visits = visits
         self.read = read
@@ -49,8 +56,8 @@ extension Notification.Name {
         snapshot.folders.contains(path) ? true : snapshot.missing.contains(path) ? false : nil
     }
 
-    /// Finder's name for a folder, as last read; its own name until then.
-    package func name(_ url: URL) -> String { snapshot.names[url.path] ?? url.lastPathComponent }
+    /// Finder's name for a folder, as last read; its fallback until then.
+    package func name(_ url: URL) -> String { snapshot.names[url.path] ?? FolderNames.fallbackName(url) }
 
     /// Visited folders, best first, at most `limit`, leaving out those a read found gone.
     package func visited(limit: Int) -> [URL] { Array(visits.ranked().filter { isFolder($0.path) != false }.prefix(limit)) }

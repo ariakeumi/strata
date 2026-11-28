@@ -156,8 +156,7 @@ extension BrowserViewController {
     /// Reuses the list's measurements and privacy checks; links and disks are never walked for icon info.
     func iconFolderSizeText(_ entry: FileEntry) -> String? {
         guard entry.isFolder else { return nil }
-        guard showsSize(entry) else { return "—" }
-        return folderSize(entry.url, request: true).map { Format.bytes($0.bytes) } ?? "…"
+        return folderSizeText(entry)
     }
 }
 

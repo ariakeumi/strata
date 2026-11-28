@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds build/Strata.app.
+# Builds build/FileX.app.
 #
 # Signs with $STRATA_SIGNING_IDENTITY, else the first "Developer ID Application" identity in your keychain, else ad-hoc.
 # A stable signature matters: macOS ties privacy grants (Desktop, Documents, Full Disk Access) to it, so ad-hoc builds
@@ -33,7 +33,7 @@ swift build -c "$config" --arch arm64 --product StrataArchiveWorker
 swift build -c "$config" --arch arm64 --product StrataResourceCheck
 bins="$(swift build -c "$config" --arch arm64 --show-bin-path)"
 
-app=build/Strata.app
+app=build/FileX.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Helpers"
 cp "$bins/Strata" "$app/Contents/MacOS/Strata"
@@ -83,7 +83,7 @@ codesign "${sign[@]}" "$app/Contents/Helpers/strata" >/dev/null
 # container to the signature that made it, and a build signed another way can take it over: only distribution builds
 # (STRATA_VERSION) use the shipped service identifier, so a local build never touches an installed Strata's container.
 local_identifier=""
-if [[ -z "${STRATA_VERSION:-}" ]]; then local_identifier=dev.strata.app.local.ArchiveService; fi
+if [[ -z "${STRATA_VERSION:-}" ]]; then local_identifier=ariakeumi.filex.local.ArchiveService; fi
 scripts/archive-service.sh "$app" "$bins" --identifier "$local_identifier" \
   --service-entitlements Sources/StrataArchiveService/ArchiveService.entitlements \
   --worker-entitlements Sources/StrataArchiveWorker/ArchiveWorker.entitlements -- "${sign[@]}"
@@ -93,7 +93,7 @@ echo "Built $app ($config, signed $signer)"
 
 if [[ "${2:-}" == "--open" ]]; then
   # Quit the running copy and wait for it to exit, so `open` launches this build instead of reactivating the old one.
-  osascript -e 'tell application id "dev.strata.app" to quit' >/dev/null 2>&1 || true
+  osascript -e 'tell application id "ariakeumi.filex" to quit' >/dev/null 2>&1 || true
   for _ in $(seq 1 50); do pgrep -x Strata >/dev/null || break; sleep 0.1; done
   pkill -x Strata 2>/dev/null || true
   while pgrep -x Strata >/dev/null; do sleep 0.1; done

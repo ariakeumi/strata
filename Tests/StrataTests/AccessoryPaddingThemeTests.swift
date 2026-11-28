@@ -13,6 +13,7 @@ extension ColorThemeTests {
     @Test func nativeAccessoryPaddingUsesTheWholeCanvasAndPreservesInsetsAndControls() throws {
         let saved = ThemeStyle.options, contrast = ThemeStyle.highContrast
         defer { ThemeStyle.apply(saved, windows: [], highContrast: contrast) }
+        testEnvironment.preferences.showStatusBar = true
         let split = MainSplitViewController(firstPane: PaneHostViewController(browser: BrowserViewController(services: testEnvironment.services)))
         split.loadViewIfNeeded()
         split.splitView.autosaveName = nil

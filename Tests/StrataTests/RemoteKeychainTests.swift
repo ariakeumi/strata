@@ -23,6 +23,7 @@ struct RemoteKeychainTests {
         var data: Data
         var label: String
         var accessible = kSecAttrAccessibleWhenUnlocked as String
+        var revision: Data?
 
         init(_ value: String, label: String = "Fixture") {
             data = Data(value.utf8)
@@ -37,6 +38,8 @@ struct RemoteKeychainTests {
         let attributeKeys: Set<String>
         let returnsData: Bool?
         let matchLimit: String?
+        let account: String?
+        let authenticationUI: String?
     }
 
     /// A model of the four Security calls, including matching every item an update/delete query selects. It never
@@ -51,6 +54,9 @@ struct RemoteKeychainTests {
             var wrongReadType = false
             var concurrentCreation: Item?
             var updateErrorAfterCreation: OSStatus?
+            var concurrentUpdate: Item?
+            var restrictedItems: Set<Identity> = []
+            var forbiddenDeletions: Set<Identity> = []
         }
         let state: Mutex<State>
         init(_ state: State = State()) { self.state = Mutex(state) }
@@ -61,15 +67,18 @@ struct RemoteKeychainTests {
                            update: { self.update($0, $1) }, delete: { self.delete($0) })
         }
 
-        private func matches(_ key: Identity, _ query: [String: Any]) -> Bool {
+        private func matches(_ key: Identity, _ item: Item, _ query: [String: Any]) -> Bool {
             [(kSecClass as String, key.kind), (kSecAttrService as String, key.service), (kSecAttrAccount as String, key.account)]
                 .allSatisfy { field, value in query[field] == nil || query[field] as? String == value }
+                && (query[kSecAttrGeneric as String] == nil || query[kSecAttrGeneric as String] as? Data == item.revision)
         }
 
         private func record(_ operation: Call.Operation, _ query: [String: Any], _ attributes: [String: Any] = [:]) -> Call {
             Call(operation: operation, queryKeys: Set(query.keys), attributeKeys: Set(attributes.keys),
                  returnsData: query[kSecReturnData as String] as? Bool,
-                 matchLimit: query[kSecMatchLimit as String] as? String)
+                 matchLimit: query[kSecMatchLimit as String] as? String,
+                 account: query[kSecAttrAccount as String] as? String,
+                 authenticationUI: query[kSecUseAuthenticationUI as String] as? String)
         }
 
         private func read(_ raw: CFDictionary) -> (OSStatus, CFTypeRef?) {
@@ -78,7 +87,19 @@ struct RemoteKeychainTests {
                 state.calls.append(record(.read, query))
                 if let error = state.readError { return (error, Data("Untrusted error result".utf8) as CFData) }
                 if state.wrongReadType { return (errSecSuccess, "Not credential data" as CFString) }
-                guard let item = state.items.first(where: { matches($0.key, query) })?.value else { return (errSecItemNotFound, nil) }
+                guard let (key, item) = state.items.first(where: { matches($0.key, $0.value, query) })
+                else { return (errSecItemNotFound, nil) }
+                let returnsData = query[kSecReturnData as String] as? Bool == true
+                if returnsData, state.restrictedItems.contains(key),
+                   query[kSecUseAuthenticationUI as String] as? String == kSecUseAuthenticationUISkip as String {
+                    return (errSecItemNotFound, nil)
+                }
+                if query[kSecReturnAttributes as String] as? Bool == true {
+                    var attributes: [String: Any] = [:]
+                    attributes[kSecAttrGeneric as String] = item.revision
+                    if returnsData { attributes[kSecValueData as String] = item.data }
+                    return (errSecSuccess, attributes as CFDictionary)
+                }
                 return (errSecSuccess, item.data as CFData)
             }
         }
@@ -104,6 +125,7 @@ struct RemoteKeychainTests {
                 guard state.items[key] == nil else { return errSecDuplicateItem }
                 var made = Item("")
                 made.data = data; made.label = label; made.accessible = accessible
+                made.revision = item[kSecAttrGeneric as String] as? Data
                 state.items[key] = made
                 return errSecSuccess
             }
@@ -115,13 +137,18 @@ struct RemoteKeychainTests {
                 state.calls.append(record(.update, query, attributes))
                 if let error = state.updateError { return error }
                 guard query[kSecReturnData as String] == nil, query[kSecMatchLimit as String] == nil,
-                      let data = attributes[kSecValueData as String] as? Data,
-                      let label = attributes[kSecAttrLabel as String] as? String else { return errSecParam }
-                let matching = state.items.keys.filter { matches($0, query) }
+                      let data = attributes[kSecValueData as String] as? Data else { return errSecParam }
+                if let concurrent = state.concurrentUpdate,
+                   let key = state.items.first(where: { matches($0.key, $0.value, query) })?.key {
+                    state.concurrentUpdate = nil
+                    state.items[key] = concurrent
+                }
+                let matching = state.items.filter { matches($0.key, $0.value, query) }.keys
                 guard !matching.isEmpty else { return errSecItemNotFound }
                 for key in matching {
                     state.items[key]?.data = data
-                    state.items[key]?.label = label
+                    if let label = attributes[kSecAttrLabel as String] as? String { state.items[key]?.label = label }
+                    if let revision = attributes[kSecAttrGeneric as String] as? Data { state.items[key]?.revision = revision }
                     if let accessibility = attributes[kSecAttrAccessible as String] as? String {
                         state.items[key]?.accessible = accessibility
                     }
@@ -134,7 +161,8 @@ struct RemoteKeychainTests {
             let query = raw as! [String: Any]
             return state.withLock { state in
                 state.calls.append(record(.delete, query))
-                let matching = state.items.keys.filter { matches($0, query) }
+                let matching = state.items.filter { matches($0.key, $0.value, query) }.keys
+                if matching.contains(where: state.forbiddenDeletions.contains) { return errSecAuthFailed }
                 for key in matching { state.items[key] = nil }
                 return matching.isEmpty ? errSecItemNotFound : errSecSuccess
             }
@@ -262,62 +290,147 @@ struct RemoteKeychainTests {
         backend.close()
     }
 
-    @Test func smbPasswordsStayInTheirOwnKeychainItemsAndStartupUsesTheSavedLogin() async throws {
+    private let smbBundle = Identity(service: "Strata SMB", account: "saved-passwords")
+
+    private func smbPasswords(in keychain: Keychain) throws -> [String: String] {
+        let item = try #require(keychain.items[smbBundle])
+        return try JSONDecoder().decode([String: String].self, from: item.data)
+    }
+
+    @Test func smbPasswordsShareOneKeychainItemAndOneReadAtStartup() async throws {
         let preferences = try Prefs.isolated()
-        let id = UUID()
-        func profile(host: String = "nas") throws -> SMBProfile {
+        func profile(host: String = "nas", id: UUID) throws -> SMBProfile {
             try SMBProfile.make(id: id, name: "", address: "smb://\(host)/team", user: "amy", guest: false,
                                 remembersPassword: true, connectsAtLaunch: true)
         }
-        let saved = try profile()
+        let saved = try profile(id: UUID())
+        let second = try profile(host: "second", id: UUID())
         let s3 = Identity(account: saved.credentialAccount)
         let other = Identity(service: "Strata SMB", account: saved.credentialAccount + "-other")
-        let chosen = Identity(service: "Strata SMB", account: saved.credentialAccount)
         let neighbors = [s3: Item("S3 secret"), other: Item("Other SMB password")]
         let keychain = Keychain(.init(items: neighbors))
-        let credentials = RemoteKeychain(access: keychain.access).smb
-        let calls = Mutex(0)
+        let expected = [saved.share: "Fixture password", second.share: "Second fixture password"]
+        let mounted = Mutex([URL: String]())
         let mounter = SMBMounter { url, password, guest, interactive, _ in
-            #expect(url == URL(string: "smb://amy@nas/team"))
-            #expect(password == "Fixture password" && !guest && !interactive)
-            calls.withLock { $0 += 1 }
+            #expect(password == expected[url] && !guest && !interactive)
+            mounted.withLock { $0[url] = password }
             return .success(URL(filePath: "/Volumes/Fixture"))
         }
-        let first = SMBConnections(preferences: preferences, credentials: credentials, mounter: mounter)
-        try await first.save(saved, replacing: nil, password: "Fixture password")
+        let first = SMBConnections(preferences: preferences, credentials: RemoteKeychain(access: keychain.access).smb, mounter: mounter)
+        async let firstSave: Void = first.save(saved, replacing: nil, password: "Fixture password")
+        async let secondSave: Void = first.save(second, replacing: nil, password: "Second fixture password")
+        _ = try await (firstSave, secondSave)
         let data = try #require(preferences.defaults.data(forKey: "smbConnections"))
-        #expect(!String(decoding: data, as: UTF8.self).contains("Fixture password"))
-        #expect(keychain.items[chosen]?.data == Data("Fixture password".utf8))
-        #expect(keychain.items.filter { $0.key != chosen } == neighbors)
+        #expect(!String(decoding: data, as: UTF8.self).localizedCaseInsensitiveContains("fixture password"))
+        #expect(try smbPasswords(in: keychain) == [saved.credentialAccount: "Fixture password",
+                                                  second.credentialAccount: "Second fixture password"])
+        #expect(keychain.items.filter { $0.key != smbBundle } == neighbors)
 
-        let reopened = SMBConnections(preferences: preferences, credentials: credentials, mounter: mounter)
-        #expect(reopened.profiles == [saved])
-        let edited = try profile()
+        let reopened = SMBConnections(preferences: preferences, credentials: RemoteKeychain(access: keychain.access).smb, mounter: mounter)
+        #expect(Set(reopened.profiles.map(\.id)) == [saved.id, second.id])
+        let beforeLaunch = keychain.calls.count
+        for task in reopened.connectAtLaunch() { await task.value }
+        #expect(mounted.withLock { $0 } == expected)
+        let launchCalls = keychain.calls.dropFirst(beforeLaunch)
+        #expect(launchCalls.allSatisfy { $0.operation == .read && $0.authenticationUI == kSecUseAuthenticationUISkip as String })
+        #expect(launchCalls.filter { $0.returnsData == true }.map(\.account) == [smbBundle.account])
+
+        let edited = try profile(id: saved.id)
         #expect(edited.revision != saved.revision)
         try await reopened.save(edited, replacing: saved, password: "")
+        let moved = try profile(host: "other", id: saved.id)
         await #expect(throws: ServerConnection.Problem.self) {
-            try await reopened.save(profile(host: "other"), replacing: edited, password: "")
+            try await reopened.save(moved, replacing: edited, password: "")
         }
         await #expect(throws: ServerConnection.Problem.self) { try await reopened.remove(saved) }
         keychain.state.withLock { $0.updateError = errSecAuthFailed }
         await #expect(throws: ServerConnection.Problem.self) {
-            try await reopened.save(profile(host: "other"), replacing: edited, password: "Rejected")
+            try await reopened.save(moved, replacing: edited, password: "Rejected")
         }
-        #expect(reopened.profiles == [edited])
-
-        for task in reopened.connectAtLaunch() { await task.value }
-        #expect(calls.withLock { $0 } == 1)
-        let read = try #require(keychain.calls.last { $0.operation == .read })
-        #expect(read.queryKeys.contains(kSecUseAuthenticationUI as String))
-        let moved = try profile(host: "other")
+        #expect(reopened.profile(saved.id) == edited)
         #expect(moved.credentialAccount != saved.credentialAccount)
         keychain.state.withLock { $0.updateError = nil }
         try await reopened.save(moved, replacing: edited, password: "Password for other host")
-        #expect(keychain.items[chosen] == nil)
-        #expect(keychain.items[Identity(service: "Strata SMB", account: moved.credentialAccount)]?.data
-                == Data("Password for other host".utf8))
+        #expect(try smbPasswords(in: keychain) == [moved.credentialAccount: "Password for other host",
+                                                  second.credentialAccount: "Second fixture password"])
         try await reopened.remove(moved)
-        #expect(keychain.items == neighbors)
+        #expect(try smbPasswords(in: keychain) == [second.credentialAccount: "Second fixture password"])
+        try await reopened.remove(second)
+        #expect(try smbPasswords(in: keychain).isEmpty)
+        #expect(keychain.items.filter { $0.key != smbBundle } == neighbors)
         #expect(reopened.profiles.isEmpty)
+    }
+
+    @Test func smbMigrationKeepsLegacyPasswordsUntilTheSharedItemIsSaved() throws {
+        let first = Identity(service: "Strata SMB", account: "old-first")
+        let second = Identity(service: "Strata SMB", account: "old-second")
+        let s3 = Identity(account: first.account)
+        let s3Item = Item("S3 secret")
+        let items = [first: Item("First legacy"), second: Item("Second legacy"), s3: s3Item]
+        let keychain = Keychain(.init(items: items, addError: errSecAuthFailed, restrictedItems: [first]))
+        let store = RemoteKeychain(access: keychain.access).smb
+        #expect(store.secret(account: first.account, interactive: false) == nil)
+        #expect(store.secret(account: second.account, interactive: false) == "Second legacy")
+        #expect(keychain.calls.allSatisfy { $0.operation == .read })
+        #expect(store.secret(account: first.account, interactive: true) == "First legacy")
+        #expect(keychain.items == items)
+        keychain.state.withLock { $0.addError = nil }
+
+        #expect(store.secret(account: first.account, interactive: true) == "First legacy")
+        #expect(try smbPasswords(in: keychain) == [first.account: "First legacy"])
+        #expect(keychain.items[first] == nil && keychain.items[second] == items[second])
+        #expect(store.secret(account: second.account, interactive: true) == "Second legacy")
+        #expect(keychain.items.filter { $0.key != smbBundle } == [s3: s3Item])
+
+        _ = keychain.state.withLock { $0.restrictedItems.insert(smbBundle) }
+        let reopened = RemoteKeychain(access: keychain.access).smb
+        #expect(reopened.secret(account: first.account, interactive: false) == nil)
+        let before = keychain.calls.count
+        #expect(reopened.secret(account: first.account, interactive: true) == "First legacy")
+        #expect(reopened.secret(account: second.account, interactive: true) == "Second legacy")
+        #expect(keychain.calls.dropFirst(before).filter { $0.returnsData == true }.map(\.account) == [smbBundle.account])
+    }
+
+    @Test func smbDeletionCannotRestoreAStaleLegacyPassword() throws {
+        let legacy = Identity(service: "Strata SMB", account: "account")
+        let old = Item("Old password")
+        let keychain = Keychain(.init(items: [legacy: old], forbiddenDeletions: [legacy]))
+        let store = RemoteKeychain(access: keychain.access).smb
+        #expect(store.set("Current password", account: legacy.account))
+        #expect(keychain.items[legacy] == old)
+        #expect(store.secret(account: legacy.account, interactive: true) == "Current password")
+        #expect(!store.delete(account: legacy.account))
+        #expect(try smbPasswords(in: keychain) == [legacy.account: "Current password"])
+        _ = keychain.state.withLock { $0.forbiddenDeletions.remove(legacy) }
+        #expect(store.delete(account: legacy.account))
+        #expect(store.secret(account: legacy.account, interactive: true) == nil)
+        #expect(keychain.items[legacy] == nil)
+    }
+
+    @Test func smbEditsPreserveAConcurrentUpdateToAnotherPassword() throws {
+        let keychain = Keychain()
+        let store = RemoteKeychain(access: keychain.access).smb
+        #expect(store.set("First", account: "first"))
+        var concurrent = try #require(keychain.items[smbBundle])
+        concurrent.revision = Data("new revision".utf8)
+        concurrent.data = try JSONEncoder().encode(["first": "First", "second": "Second"])
+        keychain.state.withLock { $0.concurrentUpdate = concurrent }
+        #expect(store.set("Edited", account: "first"))
+        #expect(try smbPasswords(in: keychain) == ["first": "Edited", "second": "Second"])
+        #expect(keychain.items[smbBundle]?.identity == concurrent.identity)
+    }
+
+    @Test func anUnreadableSMBBundleDoesNotFallBackToLegacyOrGetOverwritten() {
+        var corrupt = Item("Invalid JSON")
+        corrupt.revision = Data("revision".utf8)
+        let legacy = Identity(service: "Strata SMB", account: "legacy")
+        let items = [smbBundle: corrupt, legacy: Item("Old password")]
+        let keychain = Keychain(.init(items: items))
+        let store = RemoteKeychain(access: keychain.access).smb
+        #expect(store.secret(account: legacy.account, interactive: true) == nil)
+        #expect(!store.set("Rejected", account: legacy.account))
+        #expect(!store.delete(account: legacy.account))
+        #expect(keychain.items == items)
+        #expect(keychain.calls.allSatisfy { $0.operation == .read && $0.account == smbBundle.account })
     }
 }

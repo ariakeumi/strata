@@ -86,6 +86,7 @@ extension ColorThemeTests {
         defer { ThemeStyle.apply(saved, windows: [], highContrast: contrast) }
         ThemeStyle.apply(ColorThemeOptions(), windows: [], highContrast: false)
         let tree = try TestTree("Photos/", "Projects/", "notes.zip", "report.zip")
+        testEnvironment.preferences.showStatusBar = true
         let first = PaneHostViewController(browser: BrowserViewController(services: testEnvironment.services))
         let controller = MainSplitViewController(firstPane: first)
         controller.loadViewIfNeeded()

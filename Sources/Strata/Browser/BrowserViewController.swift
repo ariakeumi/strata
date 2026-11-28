@@ -50,7 +50,8 @@ final class BrowserViewController: NSViewController {
         self.services = services
         mode = BrowserViewMode(rawValue: services.preferences.viewMode) ?? .list
         iconSize = services.preferences.gridIconSize
-        loading = BrowserLoading(reader: services.directories, capacity: services.volumeSpace)
+        loading = BrowserLoading(reader: services.directories, capacity: services.volumeSpace,
+                                 showsVolumeSpace: { [preferences = services.preferences] in preferences.showStatusBar })
         mediaInfo = MediaInfoLoader(copies: services.copies, reader: services.mediaReader)
         outlineView = FileOutlineView(copies: services.copies)
         sizer = FolderSizer(reader: services.folderSizes)
@@ -215,6 +216,7 @@ final class BrowserViewController: NSViewController {
         installActiveView()
         preferences.notifications.addObserver(self, selector: #selector(prefsChanged), name: .prefsChanged, object: nil)
         preferences.notifications.addObserver(self, selector: #selector(alternatingRowsChanged), name: .alternatingRowsChanged, object: preferences)
+        preferences.notifications.addObserver(self, selector: #selector(automaticFolderSizesChanged), name: .automaticFolderSizesChanged, object: preferences)
         preferences.notifications.addObserver(self, selector: #selector(listNamesChanged), name: .listNamesChanged, object: preferences)
         preferences.notifications.addObserver(self, selector: #selector(appearanceChanged), name: .appearanceChanged, object: nil)
         preferences.notifications.addObserver(self, selector: #selector(listColumnsChanged), name: .listColumnsChanged, object: nil)

@@ -228,8 +228,8 @@ final class PathBar: NSView, NSTextFieldDelegate {
             parts.append((String(name), URL(filePath: root, directoryHint: .isDirectory), "externaldrive.fill"))
         } else {
             root = "/"
-            let startup = URL(filePath: "/", directoryHint: .isDirectory), name = names.name(startup)
-            parts.append((name == startup.lastPathComponent ? "Macintosh HD" : name, startup, "internaldrive.fill"))
+            let startup = Place.startupDiskFallback.url, name = names.name(startup)
+            parts.append((name == startup.lastPathComponent ? Place.startupDiskFallback.title : name, startup, "internaldrive.fill"))
         }
         // Each step's URL is spelled with what's known, never asking the disk.
         var current = URL(filePath: root, directoryHint: .isDirectory)

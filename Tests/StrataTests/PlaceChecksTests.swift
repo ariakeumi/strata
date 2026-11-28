@@ -18,8 +18,59 @@ import Testing
         let nfs = Place(title: "NFS share", url: URL(filePath: "/Volumes/Other"), symbol: "network")
         let snapshot = PlaceChecks.Snapshot(volumes: [disk, smb, nfs])
 
-        #expect(snapshot.sidebarLocationVolumes == [disk, nfs])
+        #expect(snapshot.sidebarLocationVolumes == [.startupDiskFallback, disk, nfs])
+        #expect(snapshot.sidebarVolumes == [.startupDiskFallback, disk, smb, nfs])
         #expect(snapshot.volumes == [disk, smb, nfs])
+    }
+
+    @Test func bothSidebarsShowTheStartupDiskWhilePlacesAreStillBeingRead() async throws {
+        let state = try TestTree()
+        let read = PreviewReadGate<PlaceChecks.Snapshot>()
+        let environment = try PreviewEnvironment(state, readPlaces: { _ in
+            (try? await read.read()) ?? PlaceChecks.Snapshot()
+        })
+        let services = environment.services
+        let checks = services.places
+        NSWorkspace.shared.notificationCenter.removeObserver(checks)
+        let startup = Place.startupDiskFallback
+        let renamed = Place(title: "My Startup Disk", url: startup.url, symbol: startup.symbol)
+        let external = Place(title: "External", url: URL(filePath: "/Volumes/External", directoryHint: .isDirectory),
+                             symbol: "externaldrive", isEjectable: true)
+        let sidebar = SidebarViewController(services: services)
+        _ = sidebar.view
+        func diskItems() -> [SidebarItem] {
+            sidebar.sections.first { $0.kind == .locations }?.items.filter { $0.url?.path == "/" } ?? []
+        }
+        #expect(diskItems().map(\.title) == ["Macintosh HD"])
+        #expect(diskItems().first?.isEjectable == false)
+        #expect(checks.snapshot.volumes.isEmpty)
+
+        environment.preferences.sidebarShowsTree = true
+        let folderTree = try #require(sidebar.children.compactMap { $0 as? FolderTreeController }.first)
+        let outline = try #require(folderTree.focusView as? NSOutlineView)
+        func diskNodes() -> [FolderNode] {
+            (0..<outline.numberOfRows).compactMap { outline.item(atRow: $0) as? FolderNode }.filter { $0.url.path == "/" }
+        }
+        let initial = try #require(diskNodes().first)
+        #expect(diskNodes().map(\.title) == ["Macintosh HD"])
+
+        checks.refresh()
+        await read.waitUntilStarted()
+        #expect(diskItems().map(\.title) == ["Macintosh HD"])
+        #expect(checks.snapshot.volumes.isEmpty)
+        folderTree.reveal(external.url)
+        #expect(!initial.isLoading)
+        folderTree.reveal(startup.url)
+        #expect(outline.selectedRow == outline.row(forItem: initial))
+
+        read.finish(.success(.init(volumes: [renamed, external])))
+        await checks.task?.value
+        #expect(diskItems().map(\.title) == [renamed.title])
+        #expect(diskNodes().map(\.title) == [renamed.title])
+        #expect(diskNodes().first === initial)
+        #expect(outline.selectedRow == outline.row(forItem: initial))
+        #expect(checks.snapshot.volumes == [renamed, external])
+        withExtendedLifetime(environment) {}
     }
 
     @Test func placesAreReadInTheBackgroundAndListedAsLastRead() async throws {

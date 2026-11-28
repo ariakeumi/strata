@@ -21,12 +21,16 @@ package nonisolated struct KeychainAccess: Sendable {
 /// S3 secret keys, one generic password per server in the login keychain ("Strata S3", the server's ID). Never logged,
 /// never in preferences.
 package nonisolated struct RemoteKeychain: Sendable {
-    package static let shared = RemoteKeychain(access: .system)
+    package static let shared = RemoteKeychain(access: .system, lockDirectory: SecureStorage.applicationDirectory)
     private let access: KeychainAccess
+    package let smb: SMBKeychain
 
-    package init(access: KeychainAccess) { self.access = access }
+    package init(access: KeychainAccess) { self.init(access: access, lockDirectory: nil) }
 
-    package var smb: KeychainSecrets { KeychainSecrets(access: access, service: "Strata SMB") }
+    private init(access: KeychainAccess, lockDirectory: URL?) {
+        self.access = access
+        smb = SMBKeychain(legacy: KeychainSecrets(access: access, service: "Strata SMB"), lockDirectory: lockDirectory)
+    }
     private var s3: KeychainSecrets { KeychainSecrets(access: access, service: "Strata S3") }
 
     package func setSecret(_ secret: String, for server: RemoteServer) -> Bool {
@@ -43,7 +47,7 @@ package nonisolated struct KeychainSecrets: Sendable {
     let access: KeychainAccess
     let service: String
 
-    private func query(account: String) -> [String: Any] {
+    func query(account: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
          kSecAttrAccount as String: account]
     }

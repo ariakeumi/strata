@@ -42,6 +42,7 @@ final class MainSplitViewController: NSSplitViewController, ThemeSplitWindowCont
         ])
         let contentItem = NSSplitViewItem(viewController: content)
         contentItem.minimumThickness = 320
+        status.isHidden = !services.preferences.showStatusBar
         contentItem.addBottomAlignedAccessoryViewController(status)
         scopeBar.isHidden = true
         contentItem.addTopAlignedAccessoryViewController(scopeBar)

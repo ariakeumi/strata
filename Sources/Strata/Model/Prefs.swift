@@ -2,8 +2,10 @@ import AppKit
 
 extension Notification.Name {
     package static let alternatingRowsChanged = Notification.Name("StrataAlternatingRowsChanged")
+    package static let automaticFolderSizesChanged = Notification.Name("StrataAutomaticFolderSizesChanged")
     package static let listNamesChanged = Notification.Name("StrataListNamesChanged")
     package static let prefsChanged = Notification.Name("StrataPrefsChanged")
+    package static let statusBarVisibilityChanged = Notification.Name("StrataStatusBarVisibilityChanged")
     /// Theme, density or text size changed (Settings ▸ Appearance): views restyle, nothing reloads.
     package static let appearanceChanged = Notification.Name("StrataAppearanceChanged")
     package static let favoritesChanged = Notification.Name("StrataFavoritesChanged")
@@ -42,8 +44,22 @@ package final class Prefs: PreviewTextSettings {
 
     package static func useApplicationPreferences() {
         precondition(selected == nil, "Configure preferences before creating app services")
-        selected = Prefs(defaults: .standard, domainName: Bundle.main.bundleIdentifier ?? "dev.strata.app",
+        let domain = Bundle.main.bundleIdentifier ?? "ariakeumi.filex"
+        if domain == "ariakeumi.filex" { migratePreferences(defaults: .standard, from: "dev.strata.app", to: domain) }
+        selected = Prefs(defaults: .standard, domainName: domain,
                          notifications: .default)
+    }
+
+    /// Copy missing settings once; an existing FileX setting always wins. The original domain stays intact.
+    package static func migratePreferences(defaults: UserDefaults, from oldDomain: String, to newDomain: String) {
+        let marker = "FileXDidImportStrataPreferences"
+        var target = defaults.persistentDomain(forName: newDomain) ?? [:]
+        guard target[marker] == nil else { return }
+        for (key, value) in defaults.persistentDomain(forName: oldDomain) ?? [:] where target[key] == nil {
+            target[key] = value
+        }
+        target[marker] = true
+        defaults.setPersistentDomain(target, forName: newDomain)
     }
 
     package static var shared: Prefs {
@@ -79,6 +95,7 @@ package final class Prefs: PreviewTextSettings {
     private enum Key {
         static let showHidden = "showHiddenFiles"
         static let foldersFirst = "foldersFirst"
+        static let automaticFolderSizes = "automaticFolderSizes"
         static let lastLocation = "lastLocation"
         static let returnOpens = "returnOpens"
         static let terminal = "terminalApp"
@@ -113,6 +130,7 @@ package final class Prefs: PreviewTextSettings {
         static let sidebarHidesRecents = "sidebarHidesRecents"
         static let newFileExtension = "newFileExtension"
         static let dualPaneAddressBars = "dualPaneAddressBars"
+        static let showStatusBar = "showStatusBar"
     }
 
     /// An explicit app-language override. An empty value lets macOS choose the language on the next launch.
@@ -139,6 +157,15 @@ package final class Prefs: PreviewTextSettings {
     package var dualPaneAddressBars: Bool {
         get { defaults.bool(forKey: Key.dualPaneAddressBars) }
         set { defaults.set(newValue, forKey: Key.dualPaneAddressBars); notifications.post(name: .prefsChanged, object: nil) }
+    }
+
+    package var showStatusBar: Bool {
+        get { defaults.bool(forKey: Key.showStatusBar) }
+        set {
+            guard newValue != showStatusBar else { return }
+            defaults.set(newValue, forKey: Key.showStatusBar)
+            notifications.post(name: .statusBarVisibilityChanged, object: self)
+        }
     }
 
     /// Sidebar sections you've collapsed, by ID, including sections currently hidden from the sidebar.
@@ -198,6 +225,15 @@ package final class Prefs: PreviewTextSettings {
     package var foldersFirst: Bool {
         get { defaults.object(forKey: Key.foldersFirst) == nil ? true : defaults.bool(forKey: Key.foldersFirst) }
         set { defaults.set(newValue, forKey: Key.foldersFirst); notifications.post(name: .prefsChanged, object: nil) }
+    }
+
+    package var automaticFolderSizes: Bool {
+        get { defaults.bool(forKey: Key.automaticFolderSizes) }
+        set {
+            guard newValue != automaticFolderSizes else { return }
+            defaults.set(newValue, forKey: Key.automaticFolderSizes)
+            notifications.post(name: .automaticFolderSizesChanged, object: self)
+        }
     }
 
     /// Return opens the selection instead of renaming it (Finder renames).

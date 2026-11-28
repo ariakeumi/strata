@@ -31,6 +31,7 @@ nonisolated struct VolumeSpace: Sendable, Equatable {
     let reads: DirectoryReadSession
     private let reader: DirectoryReader
     private let capacity: @Sendable (URL) async -> VolumeSpace?
+    private let showsVolumeSpace: () -> Bool
     private let now: @Sendable () -> Date
     private var capacityReadAt: Date?
     private(set) var capacityTask: Task<Void, Never>?
@@ -49,10 +50,11 @@ nonisolated struct VolumeSpace: Sendable, Equatable {
     private(set) var hasPartialListing = false
 
     init(reader: DirectoryReader, capacity: @escaping @Sendable (URL) async -> VolumeSpace? = BrowserLoading.readVolumeSpace,
-         now: @escaping @Sendable () -> Date = Date.init) {
+         now: @escaping @Sendable () -> Date = Date.init, showsVolumeSpace: @escaping () -> Bool = { true }) {
         self.reader = reader
         self.capacity = capacity
         self.now = now
+        self.showsVolumeSpace = showsVolumeSpace
         reads = DirectoryReadSession(reader: reader)
     }
 
@@ -115,7 +117,7 @@ nonisolated struct VolumeSpace: Sendable, Equatable {
     }
 
     func refreshVolumeSpace(force: Bool = false, changed: @escaping () -> Void) {
-        guard let directory else { return }
+        guard showsVolumeSpace(), let directory else { return }
         let instant = now()
         if !force {
             guard capacityTask == nil else { return }
@@ -158,10 +160,14 @@ nonisolated struct VolumeSpace: Sendable, Equatable {
     }
 
     private func cancelAuxiliaryReads() {
+        cancelVolumeSpaceRead()
+        cancelChildren()
+    }
+
+    func cancelVolumeSpaceRead() {
         if capacityTask != nil { capacityReadAt = nil }
         capacityTask?.cancel()
         capacityTask = nil
-        cancelChildren()
     }
 
     private func cancelChildren() {

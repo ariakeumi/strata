@@ -17,10 +17,10 @@ nonisolated enum SettingsPage: String, CaseIterable, Sendable {
 }
 
 nonisolated enum SettingID: String, CaseIterable, Sendable {
-    case language, hiddenFiles, foldersFirst, addressBars, reopenWindows, archives, returnKey, newWindowFolder
+    case language, hiddenFiles, foldersFirst, automaticFolderSizes, addressBars, reopenWindows, archives, returnKey, newWindowFolder
     case newFileExtension, verifyCopies, dockSearch, defaultFileBrowser, commandLine
     case fullDiskAccess, searchSyntax, terminalApp
-    case appearance, density, textSize, alternatingRows, iconPreviews, shortcuts
+    case appearance, density, textSize, alternatingRows, iconPreviews, statusBar, shortcuts
     case smbConnections
     case folderView, folderSort, iconSize, itemInfo, folderInfo, listColumns, nameExtensions
 
@@ -39,6 +39,7 @@ enum SettingsCatalog {
         entry(.language, .general, "Language", "language locale translation"),
         entry(.hiddenFiles, .general, "Show hidden files", "hidden files dotfiles invisible"),
         entry(.foldersFirst, .general, "Keep folders on top", "folders first sorting directories"),
+        entry(.automaticFolderSizes, .general, "Calculate folder sizes automatically", "folder directory size automatic calculate measure"),
         entry(.addressBars, .general, "Address bar in each pane", "dual pane address path bars"),
         entry(.reopenWindows, .general, "Reopen windows from last time", "restore reopen windows tabs session startup"),
         entry(.archives, .general, "Open archives like folders", "archives zip tar browse extract"),
@@ -57,6 +58,7 @@ enum SettingsCatalog {
         entry(.textSize, .appearance, "Text size", "font text size typography"),
         entry(.alternatingRows, .appearance, "Alternating row colors", "zebra stripes alternating rows"),
         entry(.iconPreviews, .appearance, "Show icon previews", "thumbnails icons pictures previews"),
+        entry(.statusBar, .appearance, "Show status bar", "status bar footer item count selection free space"),
         entry(.shortcuts, .shortcuts, "Shortcuts", "keyboard shortcuts key bindings hotkeys"),
         entry(.smbConnections, .connections, "SMB Connections", "smb network server share mount password keychain nas connect at launch"),
         entry(.folderView, .viewOptions, "View", "folder view mode icons gallery columns use as defaults reset"),

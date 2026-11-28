@@ -14,8 +14,61 @@ struct PaneDividerTests {
 
     init() throws { testEnvironment = try IndependentEnvironment() }
 
+    @Test func statusBarPreferenceAppliesToSingleAndDualPaneWindows() async throws {
+        _ = NSApplication.shared
+        let tree = try TestTree("left/a", "right/b")
+        let independent = try IndependentEnvironment()
+        let single = BrowserWindowController(location: tree.url("left"), services: testEnvironment.services)
+        let dual = BrowserWindowController(location: tree.url("left"), secondPane: tree.url("right"),
+                                           services: testEnvironment.services)
+        let other = BrowserWindowController(location: tree.url("right"), services: independent.services)
+        for controller in [single, dual, other] {
+            controller.window?.setFrameAutosaveName("")
+            controller.split.splitView.autosaveName = nil
+        }
+        defer {
+            for controller in [single, dual, other] {
+                controller.close()
+                controller.window?.contentViewController = nil
+            }
+        }
+
+        let paneStatuses = try dual.panes.map { pane in
+            try #require(pane.host.view.subviews.flatMap(\.subviews).compactMap { $0 as? BrowserStatusView }.first)
+        }
+        #expect(!testEnvironment.preferences.showStatusBar)
+        #expect(single.split.status.isHidden && dual.split.status.isHidden)
+        #expect(paneStatuses.allSatisfy { $0.isHiddenOrHasHiddenAncestor })
+        for pane in dual.panes { await pane.browser.directoryReads.task?.value }
+        await single.browser.directoryReads.task?.value
+        #expect(paneStatuses.allSatisfy { $0.isHiddenOrHasHiddenAncestor })
+        #expect(single.browser.loading.capacityTask == nil && single.browser.volumeSpace == nil)
+        single.window?.contentView?.layoutSubtreeIfNeeded()
+        let heightWithoutStatus = single.browser.view.frame.height
+
+        testEnvironment.preferences.showStatusBar = true
+        #expect(!single.split.status.isHidden && dual.split.status.isHidden)
+        #expect(paneStatuses.allSatisfy { !$0.isHiddenOrHasHiddenAncestor && !$0.label.stringValue.isEmpty })
+        #expect(other.split.status.isHidden)
+        await withCheckedContinuation { done in DispatchQueue.main.async { done.resume() } }
+        single.window?.contentView?.layoutSubtreeIfNeeded()
+        #expect(single.browser.view.frame.height < heightWithoutStatus)
+        let reopened = Prefs(defaults: testEnvironment.defaults, domainName: testEnvironment.preferences.domainName)
+        #expect(reopened.showStatusBar)
+
+        dual.toggleDualPane(at: nil)
+        #expect(!dual.split.status.isHidden)
+        testEnvironment.preferences.showStatusBar = false
+        #expect(single.split.status.isHidden && dual.split.status.isHidden)
+        single.toggleDualPane(at: tree.url("right"))
+        #expect(single.split.status.isHidden)
+        let newStatuses = single.panes.flatMap { $0.host.view.subviews.flatMap(\.subviews) }.compactMap { $0 as? BrowserStatusView }
+        #expect(newStatuses.count == 2 && newStatuses.allSatisfy { $0.isHiddenOrHasHiddenAncestor })
+    }
+
     @Test(arguments: [BrowserViewMode.columns, .treemap, .list, .grid, .gallery])
     func closingTheOtherPaneKeepsItsDividerOutOfTheSharedFooter(_ mode: BrowserViewMode) async throws {
+        testEnvironment.preferences.showStatusBar = true
         let first = PaneHostViewController(browser: BrowserViewController(services: testEnvironment.services))
         first.browser.setMode(mode, remember: false)
         let controller = MainSplitViewController(firstPane: first)

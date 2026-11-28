@@ -44,12 +44,61 @@ struct BrowserContextMenuTests {
         }
     }
 
+    @Test func fileSharingUsesASubmenuAndSkipsContainersAndEmptySelections() throws {
+        let title = String(localized: "Share")
+        let selection = [entry(here)]
+        let share = try #require(menu(facts(selection)).item(withTitle: title))
+        #expect(share.submenu != nil)
+        #expect(menu(facts([])).item(withTitle: title) == nil)
+
+        var container = facts(selection)
+        container.isInContainerCopy = true
+        #expect(menu(container).item(withTitle: title) == nil)
+    }
+
+    @Test func choosingASharingServiceUsesEveryCapturedFile() async throws {
+        let urls = [here, here.deletingLastPathComponent().appending(path: "ab.txt")]
+        let service = RecordingShareService(title: "Test Service", image: NSImage(), alternateImage: nil) {}
+        var requests: [[URL]] = []
+        let share = ShareMenu(urls: urls) { selection in
+            requests.append(selection)
+            return [service]
+        }
+        let item = share.item
+        let submenu = try #require(item.submenu)
+        #expect(requests.isEmpty)
+        #expect(submenu.items.first?.isEnabled == false)
+        submenu.delegate?.menuNeedsUpdate?(submenu)
+        submenu.delegate?.menuNeedsUpdate?(submenu)
+        await share.loading?.value
+
+        #expect(requests == [urls])
+        #expect(service.shared.isEmpty)
+        #expect(submenu.items.map(\.title) == [service.menuItemTitle])
+        let choice = try #require(submenu.items.first)
+        let action = try #require(choice.action)
+        #expect(NSApplication.shared.sendAction(action, to: choice.target, from: choice))
+        #expect(service.shared == urls)
+    }
+
+    private nonisolated final class RecordingShareService: NSSharingService {
+        private(set) var shared: [URL] = []
+
+        override func perform(withItems items: [Any]) {
+            shared = items.compactMap { $0 as? URL }
+        }
+    }
+
     private func actions(_ selection: [FileEntry]) -> [Selector?] {
         actions(facts(selection))
     }
 
     private func actions(_ facts: BrowserContextMenu.Facts) -> [Selector?] {
-        BrowserContextMenu(facts: facts, target: NSObject()) { _ in }.make().items.map(\.action)
+        menu(facts).items.map(\.action)
+    }
+
+    private func menu(_ facts: BrowserContextMenu.Facts) -> NSMenu {
+        BrowserContextMenu(facts: facts, target: NSObject()) { _ in }.make()
     }
 
     private func entry(_ url: URL) -> FileEntry {

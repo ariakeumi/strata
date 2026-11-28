@@ -109,6 +109,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(folderNamesRead), name: .folderNamesRead,
                                                object: services.folderNames)
         services.preferences.notifications.addObserver(self, selector: #selector(browserPreferencesChanged), name: .prefsChanged, object: nil)
+        let preferences = services.preferences
+        preferences.notifications.addObserver(self, selector: #selector(statusBarVisibilityChanged),
+                                              name: .statusBarVisibilityChanged, object: preferences)
         services.remote.notifications.addObserver(self, selector: #selector(serverDisconnected(_:)), name: .remoteServerDisconnected, object: services.remote.servers)
         // The Inspector's Cloud row follows downloads and uploads.
         NotificationCenter.default.addObserver(self, selector: #selector(cloudStatusChanged), name: .cloudStatusChanged,
@@ -638,6 +641,18 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         updateHeaders()
     }
 
+    @objc private func statusBarVisibilityChanged() {
+        guard !isClosed else { return }
+        refreshStatus()
+        for pane in panes {
+            if services.preferences.showStatusBar {
+                pane.browser.refreshVolumeSpaceIfVisible()
+            } else {
+                pane.browser.loading.cancelVolumeSpaceRead()
+            }
+        }
+    }
+
     @objc func viewModeChanged(_ sender: NSToolbarItemGroup) {
         browser.setViewMode(sender)
         syncViewModeItem()
@@ -737,11 +752,19 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     func refreshStatus() {
         guard !isClosed else { return }
-        split.status.text = browser.statusText
-        split.status.details = browser.volumeSpaceDescription
+        let showsStatus = services.preferences.showStatusBar
         // Two panes: each shows its own counts under its list; the shared bar would sit across both.
-        split.status.isHidden = isDualPane
-        for p in panes { p.host.setStatus(isDualPane ? p.browser.statusText : nil, details: p.browser.volumeSpaceDescription) }
+        let showsSharedStatus = showsStatus && !isDualPane
+        split.status.isHidden = !showsSharedStatus
+        if showsSharedStatus {
+            split.status.text = browser.statusText
+            split.status.details = browser.volumeSpaceDescription
+        }
+        let showsPaneStatus = showsStatus && isDualPane
+        for p in panes {
+            p.host.setStatus(showsPaneStatus ? p.browser.statusText : nil,
+                             details: showsPaneStatus ? p.browser.volumeSpaceDescription : nil)
+        }
     }
 
     private func refreshInspector() {

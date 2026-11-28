@@ -96,3 +96,7 @@ final class SidebarItem {
         return nil
     }
 }
+
+extension SMBProfile {
+    var sidebarSymbol: String { guest ? "display" : "airport.extreme" }
+}

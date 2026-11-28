@@ -11,7 +11,7 @@ package final class RemoteServices {
     package let sessions: RemoteSessions
     package let files: RemoteFiles
     package let connections: RemoteConnections
-    package let smbCredentials: KeychainSecrets
+    package let smbCredentials: SMBKeychain
     package let notifications: NotificationCenter
     package var copies: RemoteCopyStore { files.copies }
     package var browsing: RemoteBrowsing { RemoteBrowsing(sessions: sessions, files: files) }

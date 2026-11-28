@@ -28,7 +28,7 @@ usage: strata [path …]
   -w, --workspace  open a saved workspace (Window ▸ Workspaces), by name
 """
 
-let bundleID = "dev.strata.app"
+let bundleID = "ariakeumi.filex"
 var arguments = Array(CommandLine.arguments.dropFirst())
 var query: String?
 var scope: String?
@@ -83,7 +83,7 @@ func absolute(_ path: String) -> URL {
 }
 
 guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
-    writeError("strata: Strata.app isn't installed\n")
+    writeError("strata: FileX.app isn't installed\n")
     exit(1)
 }
 

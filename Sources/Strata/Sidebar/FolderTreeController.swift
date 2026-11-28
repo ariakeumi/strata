@@ -9,7 +9,7 @@ final class FolderNode {
     var acceptsFileDrop: Bool { kind == .folder || kind == .trash }
 
     let url: URL
-    let title: String
+    var title: String
     var symbol: String
     let kind: Kind
     /// nil until read (or when reading failed: it's tried again on the next expand).
@@ -184,9 +184,12 @@ final class FolderTreeController: NSViewController {
         }
         let home = Places.home
         var fresh = [reuse(home, .folder) { FolderNode(url: home, title: places.name(home), symbol: "house") }]
-        for volume in places.snapshot.volumes {
+        for volume in places.snapshot.sidebarVolumes {
             let url = volume.url.lexicallyStandardized
-            fresh.append(reuse(url, .folder) { FolderNode(url: url, title: volume.title, symbol: volume.symbol) })
+            let node = reuse(url, .folder) { FolderNode(url: url, title: volume.title, symbol: volume.symbol) }
+            node.title = volume.title
+            node.symbol = volume.symbol
+            fresh.append(node)
         }
         for folder in cloudFolders where !fresh.contains(where: { $0.url.fileViewKey == folder.url.fileViewKey }) {
             fresh.append(reuse(folder.url, .folder) { FolderNode(url: folder.url, title: folder.title, symbol: "icloud") })
@@ -203,8 +206,9 @@ final class FolderTreeController: NSViewController {
         }
         for profile in smb.profiles {
             let kind = FolderNode.Kind.smb(profile.id)
-            let node = roots.first { $0.kind == kind && $0.title == profile.title && $0.url == profile.address }
-            fresh.append(node ?? FolderNode(url: profile.address, title: profile.title, symbol: "network", kind: kind))
+            let symbol = profile.sidebarSymbol
+            let node = roots.first { $0.kind == kind && $0.title == profile.title && $0.url == profile.address && $0.symbol == symbol }
+            fresh.append(node ?? FolderNode(url: profile.address, title: profile.title, symbol: symbol, kind: kind))
         }
         if hasContainers ?? (containerStore.engine != nil) {
             let root = copies.containerCopies.root
@@ -230,9 +234,10 @@ final class FolderTreeController: NSViewController {
         revealCurrent()
     }
 
-    /// A disk mounted or ejected, an engine started or stopped: those rows come and go, the rest stays as it is.
+    /// Updates roots and their labels while keeping expanded nodes and their watchers.
     @objc private func volumesChanged() {
         guard isActive, !roots.isEmpty else { return }
+        let priorLabels = roots.map { ($0, $0.title, $0.symbol) }
         let fresh = currentRoots()
         let removed = IndexSet(roots.indices.filter { index in !fresh.contains { $0 === roots[index] } })
         for index in removed { unwatch(below: roots[index].url) }
@@ -255,6 +260,9 @@ final class FolderTreeController: NSViewController {
         roots = fresh
         if !inserted.isEmpty { outline.insertItems(at: inserted, inParent: nil, withAnimation: []) }
         outline.endUpdates()
+        for (node, title, symbol) in priorLabels where node.title != title || node.symbol != symbol {
+            outline.reloadItem(node)
+        }
         revealCurrent()
     }
 
@@ -483,6 +491,10 @@ final class FolderTreeController: NSViewController {
             .max(by: { $0.url.fileViewKey.count < $1.url.fileViewKey.count }) else {
             return deselect()
         }
+        // Wait for the mounted roots before following a path through the provisional startup disk.
+        if root.url.fileViewKey == "/", path != "/", !places.snapshot.volumes.contains(where: { $0.url.path == "/" }) {
+            return deselect()
+        }
         descend(from: root, toward: path, generation: generation)
     }
 
@@ -594,8 +606,7 @@ extension FolderTreeController: NSOutlineViewDataSource, NSOutlineViewDelegate {
             return cell
         }()
         if case .smb(let id) = node.kind, let profile = smb.profile(id) {
-            let mounted = smb.mountedVolume(for: profile, in: places.snapshot.volumes) != nil
-            cell.configure(title: node.title, symbol: node.symbol, tint: mounted ? .systemGreen : nil, help: profile.shownAddress)
+            cell.configure(title: node.title, symbol: node.symbol, help: profile.shownAddress)
         } else {
             cell.configure(title: node.title, symbol: node.symbol, help: Format.tildePath(node.url))
         }

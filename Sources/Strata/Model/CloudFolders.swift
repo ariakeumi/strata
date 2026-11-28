@@ -8,6 +8,10 @@ package nonisolated struct CloudFolder: Equatable, Sendable {
 
 /// Accounts exposed by the installed sync apps, discovered without launching them or contacting their servers.
 package nonisolated enum CloudFolders {
+    package static func iCloudDrive(in home: URL) -> URL {
+        home.appending(path: "Library/Mobile Documents/com~apple~CloudDocs", directoryHint: .isDirectory)
+    }
+
     package static func contains(_ url: URL, in root: URL) -> Bool {
         guard url.isFileURL, root.isFileURL else { return false }
         let path = PathSpelling.system(PathSpelling.short(url))
@@ -32,7 +36,7 @@ package nonisolated enum CloudFolders {
         guard home.isFileURL else { return [] }
         let fm = FileManager.default
         var urls: [URL] = []
-        let iCloud = home.appending(path: "Library/Mobile Documents/com~apple~CloudDocs")
+        let iCloud = iCloudDrive(in: home)
         if let fd = try? ChosenFile.openDirectory(iCloud.path) {
             close(fd)
             urls.append(iCloud)

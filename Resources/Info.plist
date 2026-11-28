@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>Strata</string>
+	<string>FileX</string>
 	<key>CFBundleDisplayName</key>
-	<string>Strata</string>
+	<string>FileX</string>
 	<key>CFBundleIdentifier</key>
-	<string>dev.strata.app</string>
+	<string>ariakeumi.filex</string>
 	<key>CFBundleExecutable</key>
 	<string>Strata</string>
 	<key>CFBundlePackageType</key>
@@ -49,7 +49,7 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>dev.strata.app</string>
+			<string>ariakeumi.filex</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>strata</string>
@@ -57,14 +57,14 @@
 		</dict>
 	</array>
 	<key>NSDesktopFolderUsageDescription</key>
-	<string>Strata shows the files on your Desktop.</string>
+	<string>FileX shows the files on your Desktop.</string>
 	<key>NSDocumentsFolderUsageDescription</key>
-	<string>Strata shows the files in your Documents folder.</string>
+	<string>FileX shows the files in your Documents folder.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
-	<string>Strata shows the files in your Downloads folder.</string>
+	<string>FileX shows the files in your Downloads folder.</string>
 	<key>NSRemovableVolumesUsageDescription</key>
-	<string>Strata shows the files on external drives.</string>
+	<string>FileX shows the files on external drives.</string>
 	<key>NSNetworkVolumesUsageDescription</key>
-	<string>Strata shows the files on network volumes.</string>
+	<string>FileX shows the files on network volumes.</string>
 </dict>
 </plist>

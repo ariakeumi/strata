@@ -214,12 +214,11 @@ final class SidebarViewController: NSViewController {
             + [SidebarItem(title: String(localized: "Trash", comment: "Sidebar item: the Trash"), target: .folder(Trash.home), symbol: trashSymbol)])
     }
 
-    /// Servers you've connected to: an SFTP server or a bucket each, green while connected.
+    /// Saved SMB connections, SFTP servers and S3 buckets.
     private func serversSection() -> SidebarSection? {
         let shares = services.smb.profiles.map { profile -> SidebarItem in
-            let item = SidebarItem(title: profile.title, target: .smb(profile.id), symbol: "network")
+            let item = SidebarItem(title: profile.title, target: .smb(profile.id), symbol: profile.sidebarSymbol)
             item.help = profile.shownAddress
-            if services.smb.mountedVolume(for: profile, in: services.places.snapshot.volumes) != nil { item.tint = .systemGreen }
             return item
         }
         let servers = services.remote.servers.all.map { server -> SidebarItem in

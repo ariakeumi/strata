@@ -41,7 +41,7 @@ final class BrowserServices {
     /// and copy routing; constructing a window never reconfigures an existing queue or its active jobs.
     static func configured(transfers: TransferQueue, visits: Frecency, windows: BrowserWindows,
                            remote: RemoteServices, containers: ContainerFiles, containerStore: ContainerStore,
-                           clipboard: Clipboard, directories: DirectoryReader? = nil,
+                           clipboard: Clipboard, directories: DirectoryReader? = nil, readPlaces: @escaping PlaceChecks.Reader = PlaceChecks.read,
                            volumeSpace: @escaping @Sendable (URL) async -> VolumeSpace? = BrowserLoading.readVolumeSpace,
                            remoteBrowsing: RemoteBrowsing? = nil,
                            mediaReader: @escaping MediaInfoLoader.Reader = MediaInfoLoader.read,
@@ -54,7 +54,7 @@ final class BrowserServices {
                            tags: TagStore? = nil, cloud: CloudStore? = nil,
                            smbMounter: SMBMounter = .unavailable,
                            showSetting: @escaping @MainActor (SettingID) -> Void = { _ in }) -> BrowserServices {
-        BrowserServices(transfers: transfers, visits: visits, directories: directories, windows: windows,
+        BrowserServices(transfers: transfers, visits: visits, directories: directories, windows: windows, readPlaces: readPlaces,
                         volumeSpace: volumeSpace, remote: remote, remoteBrowsing: remoteBrowsing,
                         containers: containers, containerStore: containerStore, clipboard: clipboard,
                         mediaReader: mediaReader, mediaDetailsReader: mediaDetailsReader, mediaAnalysis: mediaAnalysis, folderSizes: folderSizes, thumbnails: thumbnails, itemInfo: itemInfo,
@@ -100,6 +100,7 @@ final class BrowserServices {
     var statuses: FileStatuses { FileStatuses(tags: tags, cloud: cloud) }
 
     private init(transfers: TransferQueue, visits: Frecency, directories: DirectoryReader? = nil, windows: BrowserWindows,
+                 readPlaces: @escaping PlaceChecks.Reader = PlaceChecks.read,
                  volumeSpace: @escaping @Sendable (URL) async -> VolumeSpace? = BrowserLoading.readVolumeSpace,
                  remote: RemoteServices, remoteBrowsing: RemoteBrowsing? = nil,
                  containers: ContainerFiles, containerStore: ContainerStore, clipboard: Clipboard,
@@ -119,7 +120,7 @@ final class BrowserServices {
         self.transfers = transfers
         self.files = FileCommands(transfers: transfers)
         self.visits = visits
-        self.places = PlaceChecks(preferences: transfers.preferences, visits: visits, read: PlaceChecks.read)
+        self.places = PlaceChecks(preferences: transfers.preferences, visits: visits, read: readPlaces)
         self.folderNames = FolderNames(read: FolderNames.read)
         self.remote = remote
         self.smb = SMBConnections(preferences: transfers.preferences, credentials: remote.smbCredentials, mounter: smbMounter)

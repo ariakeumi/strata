@@ -134,8 +134,8 @@
   },
   {
     "file": "Strata/Browser/PutBack.swift",
-    "find": "        let history = services.transfers.history.entries",
-    "replace": "        let history = OperationLog.shared.entries",
+    "find": "        let history = services.transfers.history.snapshot()",
+    "replace": "        let history = OperationLog.shared.snapshot()",
     "rule": "Put Back asks the app's History where an item came from, not its window's",
     "tests": "FileCommandOwnershipTests/putBackFindsWhereAnItemCameFromInItsWindowsHistory"
   },
@@ -3395,7 +3395,7 @@
   },
   {
     "file": "Strata/Browser/BrowserViewController+Outline.swift",
-    "find": "guard showsSize(node.entry) else { return \"—\" }",
+    "find": "guard showsSize(entry) else { return \"—\" }",
     "replace": "guard true else { return \"—\" }",
     "rule": "Provider thumbnail and info ownership List Size column shows ellipsis for a provider folder",
     "tests": "ProviderThumbnailInfoTests/providerFoldersAreNotMeasuredForListIconsOrDiskUsage"

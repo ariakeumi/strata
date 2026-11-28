@@ -61,6 +61,10 @@ struct AppearanceSettings: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Section {
+                PrefToggle(title: "Show status bar", caption: nil,
+                           get: { preferences.showStatusBar }, set: { preferences.showStatusBar = $0 }).settingAnchor(.statusBar)
+            }
         }
         .formStyle(.grouped)
         .modifier(ThemedFormBackground())

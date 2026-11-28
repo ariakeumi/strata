@@ -170,7 +170,7 @@ jobs:
       - name: Check the app
         run: |
           set -euo pipefail
-          APP=build/Strata.app
+          APP=build/FileX.app
           codesign --verify --strict --deep --verbose=2 "$APP"
           codesign -dvv "$APP" 2>&1 | grep -E "^(Authority|TeamIdentifier|Timestamp|Runtime Version)" || true
           echo "version $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")" \
@@ -187,7 +187,7 @@ jobs:
           TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
         run: |
           set -euo pipefail
-          APP=build/Strata.app
+          APP=build/FileX.app
           mkdir -p dist
           signed=false
           if [ "$HAS_APPLE_SIGNING" = true ]; then signed=true; fi
@@ -224,7 +224,7 @@ jobs:
           # 2. The disk image: the app next to a link to Applications.
           stage="$RUNNER_TEMP/dmg"
           rm -rf "$stage" && mkdir -p "$stage"
-          ditto "$APP" "$stage/Strata.app"
+          ditto "$APP" "$stage/FileX.app"
           ln -s /Applications "$stage/Applications"
           hdiutil create -volname Strata -srcfolder "$stage" -fs HFS+ -format UDZO -ov dist/Strata.dmg
           if [ "$signed" = true ]; then

@@ -14,13 +14,14 @@ nonisolated package enum SecureStorage {
     private static let log = Logger(subsystem: "dev.strata.app", category: "storage")
 
     private static let selected = Mutex<Context?>(nil)
+    package static let applicationDirectory = URL.applicationSupportDirectory.appending(path: "Strata", directoryHint: .isDirectory)
 
     /// The executable opts into the user's stores before creating any services. Importing the module, including in
     /// optimized tests, instead gets a private temporary context. Once resolved, the process context never changes.
     package static func useApplicationStorage() {
         selected.withLock { context in
             precondition(context == nil, "Configure storage before creating app services")
-            context = Context(directory: URL.applicationSupportDirectory.appending(path: "Strata", directoryHint: .isDirectory),
+            context = Context(directory: applicationDirectory,
                               caches: URL.cachesDirectory.appending(path: "dev.strata.app", directoryHint: .isDirectory),
                               keyProvider: loadOrCreateKey)
         }

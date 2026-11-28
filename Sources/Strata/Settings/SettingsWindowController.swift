@@ -29,7 +29,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
             return item
         }
-        tabs.addTabViewItem(pane(.general, "gearshape", GeneralSettings()))
+        tabs.addTabViewItem(pane(.general, "gearshape", GeneralSettings(preferences: preferences)))
         tabs.addTabViewItem(pane(.search, "magnifyingglass", SearchSettings()))
         tabs.addTabViewItem(pane(.terminal, "terminal", TerminalSettings()))
         tabs.addTabViewItem(pane(.appearance, "paintbrush", AppearanceSettings(preferences: preferences)))
@@ -108,7 +108,7 @@ private struct SettingsPaneView<Content: View>: View {
 }
 
 /// Bridges a `Prefs` property into SwiftUI and refreshes when it changes.
-private struct PrefToggle: View {
+struct PrefToggle: View {
     let title: String.LocalizationValue
     let caption: String.LocalizationValue?
     let get: () -> Bool
@@ -125,6 +125,7 @@ private struct PrefToggle: View {
 }
 
 private struct GeneralSettings: View {
+    let preferences: Prefs
     @State private var returnOpens = Prefs.shared.returnOpens
     @State private var isFileViewer = FileViewer.isStrata
 
@@ -136,6 +137,8 @@ private struct GeneralSettings: View {
                            get: { Prefs.shared.showHidden }, set: { Prefs.shared.showHidden = $0 }).settingAnchor(.hiddenFiles)
                 PrefToggle(title: "Keep folders on top", caption: nil,
                            get: { Prefs.shared.foldersFirst }, set: { Prefs.shared.foldersFirst = $0 }).settingAnchor(.foldersFirst)
+                PrefToggle(title: "Calculate folder sizes automatically", caption: nil,
+                           get: { preferences.automaticFolderSizes }, set: { preferences.automaticFolderSizes = $0 }).settingAnchor(.automaticFolderSizes)
                 PrefToggle(title: "Address bar in each pane",
                            caption: "In Dual Pane, each side has its own path bar instead of just the folder name.",
                            get: { Prefs.shared.dualPaneAddressBars }, set: { Prefs.shared.dualPaneAddressBars = $0 }).settingAnchor(.addressBars)

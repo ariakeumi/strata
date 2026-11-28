@@ -1,6 +1,9 @@
 import AppKit
 
 package nonisolated struct Place: Sendable, Equatable {
+    package static let startupDiskFallback = Place(title: "Macintosh HD", url: URL(filePath: "/", directoryHint: .isDirectory),
+                                                    symbol: "internaldrive")
+
     package let title: String
     package let url: URL
     package let symbol: String
@@ -106,7 +109,7 @@ package enum Places {
     ]
     /// Common homes for source code get a spot without any setup.
     private static let codeFolders = ["Developer", "Projects", "Code", "code", "src", "repos", "Documents/GitHub", "GitHub"]
-    private static var iCloud: URL { home.appending(path: "Library/Mobile Documents/com~apple~CloudDocs") }
+    private static var iCloud: URL { CloudFolders.iCloudDrive(in: home) }
     private static let applications = URL(fileURLWithPath: "/Applications")
 
     /// Every folder the default favorites are made of, or may be.

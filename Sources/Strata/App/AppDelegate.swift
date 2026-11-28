@@ -65,8 +65,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         ContainerStore.shared.start()
         ProjectEditors.warm()
-        // Loads history now, so a plain copy left by an earlier build is removed right away.
-        _ = OperationLog.shared
         // Archives opened as folders and not looked at for a day; containers' and servers' files left by a crash.
         ContainerCopyStore.shared.setAsideForRemoval()
         DispatchQueue.global(qos: .utility).async {
@@ -339,7 +337,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = removed.wait(timeout: .now() + 2)
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        sender.setActivationPolicy(.accessory)
+        return false
+    }
+
+    private func returnToForeground() {
+        if NSApp.activationPolicy() == .accessory, NSApp.setActivationPolicy(.regular) {
+            NSApp.activate()
+        }
+    }
 
     @objc func toggleShelf(_ sender: Any?) {
         ShelfPanel.shared.toggle()
@@ -352,6 +359,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @discardableResult
     func openWindow(at url: URL, select: URL? = nil, secondPane: URL? = nil, tabbedWith parent: NSWindow? = nil, services: BrowserServices? = nil, frame: SavedWindowFrame? = nil) -> BrowserWindowController {
+        returnToForeground()
         let controller = BrowserWindowController(location: url, select: select, secondPane: secondPane, services: services ?? browserServices, frame: frame)
         windowControllers.append(controller)
         controller.onClose = { [weak self, weak controller] in
@@ -382,6 +390,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func showSettings(_ sender: Any?) {
+        returnToForeground()
         SettingsWindowController.shared.show()
     }
 

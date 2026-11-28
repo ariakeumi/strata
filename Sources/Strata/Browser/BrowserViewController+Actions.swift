@@ -326,6 +326,24 @@ extension BrowserViewController {
         columnController?.updateAlternatingRows()
     }
 
+    @objc func automaticFolderSizesChanged() {
+        let automatic = preferences.automaticFolderSizes
+        if !automatic { sizer.cancel { _ in true } }
+        switch effectiveMode {
+        case .list:
+            let column = outlineView.column(withIdentifier: .size)
+            let visible = outlineView.rows(in: outlineView.visibleRect)
+            guard column >= 0, !outlineView.tableColumns[column].isHidden, visible.length > 0 else { return }
+            let rows = IndexSet(integersIn: visible.location..<NSMaxRange(visible))
+            outlineView.reloadData(forRowIndexes: inlineRename.except(rows, in: outlineView), columnIndexes: [column])
+        case .grid: gridController?.refreshVisibleItems(reconfigure: true)
+        case .treemap:
+            // The archive view's logical sizes also use nonfetching walks. Re-request any cancelled above.
+            if !automatic { pushContent() }
+        case .columns, .gallery: break
+        }
+    }
+
     @objc func listNamesChanged() {
         guard isViewLoaded, effectiveMode == .list else { return }
         let column = outlineView.column(withIdentifier: .name)
@@ -358,7 +376,8 @@ extension BrowserViewController {
 
 
     func refreshVolumeSpaceIfVisible() {
-        guard let view = viewIfLoaded, view.window?.isVisible == true, !view.isHiddenOrHasHiddenAncestor else { return }
+        guard !isShowingResults, let view = viewIfLoaded, view.window?.isVisible == true,
+              !view.isHiddenOrHasHiddenAncestor else { return }
         loading.refreshVolumeSpace { [weak self] in
             guard let self else { return }
             delegate?.browserCapacityDidChange(self)

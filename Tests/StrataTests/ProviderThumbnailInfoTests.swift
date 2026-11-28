@@ -235,6 +235,7 @@ struct ProviderThumbnailInfoTests {
         let copies = CopyProviders([Provider(root: tree.url("provider"), state: State([]))])
         let environment = try Environment(tree, copies: copies)
         environment.preferences.iconViewOptions = IconViewOptions(showsInfo: true, folderInfo: .size)
+        environment.preferences.automaticFolderSizes = true
         let browser = BrowserViewController(services: environment.services), before = tree.snapshot()
         browser.view.frame = NSRect(x: 0, y: 0, width: 700, height: 500)
         browser.load(tree.url("provider"))

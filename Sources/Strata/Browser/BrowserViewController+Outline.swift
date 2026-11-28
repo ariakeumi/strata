@@ -83,20 +83,20 @@ extension BrowserViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
                            alignment: column.headerCell.alignment, dimmed: dimmed)
         case .tags: cell.configure(services.tags.tags(for: entry.url).map(\.name).joined(separator: ", "),
                                    alignment: .left, dimmed: dimmed)
-        case .size: cell.configure(sizeText(node), alignment: .right, dimmed: dimmed)
+        case .size: cell.configure(entry.isDirectory ? folderSizeText(entry) : Format.bytes(entry.size ?? 0), alignment: .right, dimmed: dimmed)
         case .location: cell.configure(Format.tildePath(entry.url.deletingLastPathComponent()), alignment: .left, dimmed: dimmed)
         default: cell.configure(entry.kind, alignment: .left, dimmed: dimmed)
         }
         return cell
     }
 
-    private func sizeText(_ node: FileNode) -> String {
-        guard node.entry.isDirectory else { return Format.bytes(node.entry.size ?? 0) }
-        guard showsSize(node.entry) else { return "—" }
-        if let size = folderSize(node.url, request: true) {
+    func folderSizeText(_ entry: FileEntry) -> String {
+        guard showsSize(entry) else { return "—" }
+        let automatic = preferences.automaticFolderSizes
+        if let size = folderSize(entry.url, request: automatic) {
             return Format.bytes(size.bytes)
         }
-        return "…"
+        return automatic ? "…" : "—"
     }
 
     /// Only walk local folders whose access is already available.

@@ -57,6 +57,7 @@ struct DiskSpaceTests {
     @Test func freeSpaceAndReclaimableAvailabilityRemainDistinctInTheFooter() async throws {
         let tree = try TestTree()
         let environment = try IndependentEnvironment()
+        environment.preferences.showStatusBar = true
         defer { withExtendedLifetime(environment) {} }
         let reads = ControlledDirectoryReads()
         defer { reads.stop() }

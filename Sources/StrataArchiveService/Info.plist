@@ -7,7 +7,7 @@
 	<key>CFBundleExecutable</key>
 	<string>StrataArchiveService</string>
 	<key>CFBundleIdentifier</key>
-	<string>dev.strata.app.ArchiveService</string>
+	<string>ariakeumi.filex.ArchiveService</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>

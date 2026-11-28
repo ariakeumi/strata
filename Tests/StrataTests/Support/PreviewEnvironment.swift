@@ -18,6 +18,7 @@ final class PreviewEnvironment {
     let services: BrowserServices
 
     init(_ tree: TestTree, reader: DirectoryReader? = nil, windows: BrowserWindows = .headless,
+         readPlaces: @escaping PlaceChecks.Reader = PlaceChecks.read,
          makeThumbnails: ((CopyProviders, ContainerStore) -> FileThumbnails)? = nil,
          providers: [any CopyProvider]? = nil,
          cloudFolders: @escaping @Sendable () async -> [CloudFolder] = { [] },
@@ -40,6 +41,7 @@ final class PreviewEnvironment {
         services = BrowserServices.configured(transfers: transfers, visits: Frecency(preferences: preferences.defaults), windows: windows,
                                               remote: remote, containers: containers, containerStore: containerStore,
                                               clipboard: Clipboard(pasteboard: pasteboard, notifications: NotificationCenter()), directories: reader,
+                                              readPlaces: readPlaces,
                                               thumbnails: makeThumbnails?(copies, containerStore), cloudFolders: cloudFolders)
     }
 

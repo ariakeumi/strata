@@ -18,7 +18,8 @@ import Testing
         ranker.source = rows
         let queries: [(String, SettingID)] = [("zebra", .alternatingRows), ("settings zebra", .alternatingRows),
             ("verify copies", .verifyCopies), ("filename extensions", .nameExtensions), ("font size", .textSize),
-            ("full disk access", .fullDiskAccess), ("settings terminal", .terminalApp), ("icon size", .iconSize)]
+            ("full disk access", .fullDiskAccess), ("settings terminal", .terminalApp), ("icon size", .iconSize),
+            ("status bar", .statusBar), ("calculate folder sizes", .automaticFolderSizes)]
         for (query, expected) in queries {
             ranker.rank(query)
             #expect(ranker.results.contains { $0.item.settingID == expected }, "\(query)")

@@ -259,6 +259,49 @@ import Testing
         }
     }
 
+    @Test func automaticFolderSizesAreOffByDefaultAndTurningThemOffKeepsExplicitRequests() async throws {
+        let _ = NSApplication.shared
+        let tree = try TestTree("home/folder/file", "home/selected/file", "home/file")
+        let home = tree.url("home"), folder = tree.url("home/folder"), selected = tree.url("home/selected")
+        let released = DispatchSemaphore(value: 0)
+        defer { released.signal() }
+        let environment = try IndependentEnvironment(folderSizes: { _, _ in
+            _ = released.wait(timeout: .now() + 600)
+            released.signal()
+            return nil
+        })
+        defer { withExtendedLifetime(environment) {} }
+        let preferences = environment.preferences
+        let browser = BrowserViewController(services: environment.services)
+        defer { browser.stopBackgroundWork() }
+        browser.view.frame = NSRect(x: 0, y: 0, width: 700, height: 500)
+        browser.load(home)
+        await browser.directoryReads.task?.value
+        let row = try #require(browser.node(for: folder))
+        let file = try #require(browser.node(for: tree.url("home/file")))
+        let column = try #require(browser.outlineView.tableColumn(withIdentifier: .size))
+        func sizeLabel(_ row: FileNode) -> String? {
+            let cell = browser.outlineView(browser.outlineView, viewFor: column, item: row) as? TextCellView
+            return cell?.textField?.stringValue
+        }
+
+        #expect(!preferences.automaticFolderSizes)
+        #expect(sizeLabel(row) == "—" && browser.iconFolderSizeText(row.entry) == "—")
+        #expect(sizeLabel(file) == Format.bytes(file.entry.size ?? 0))
+        #expect(!browser.sizer.hasPending)
+
+        preferences.automaticFolderSizes = true
+        #expect(sizeLabel(row) == "…" && browser.iconFolderSizeText(row.entry) == "…")
+        #expect(browser.sizer.isPending(folder) && !browser.sizer.isAskedFor(folder))
+        #expect(browser.folderSize(selected, request: true, askedBy: .inspector) == nil)
+
+        preferences.automaticFolderSizes = false
+        #expect(sizeLabel(row) == "—" && !browser.sizer.isPending(folder))
+        #expect(browser.sizer.isAskedFor(selected))
+        browser.setMode(.treemap, remember: false)
+        #expect(browser.sizer.isAskedFor(folder))
+    }
+
     @Test func aRowShowsNoSizeAndStartsNoWalkWhileItsCloudBadgeSaysOnlyInTheCloud() async throws {
         let _ = NSApplication.shared
         let tree = try TestTree("home/cloud/file", "home/local/file")
@@ -266,6 +309,7 @@ import Testing
         defer { [home, cloud, local].forEach(FolderSizer.invalidate) }
         let environment = try IndependentEnvironment()
         defer { withExtendedLifetime(environment) {} }
+        environment.preferences.automaticFolderSizes = true
         let released = DispatchSemaphore(value: 0)
         defer { released.signal() }
         let badge = CloudBadge(), store = badge.store
